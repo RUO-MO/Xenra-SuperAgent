@@ -1,33 +1,35 @@
-# 000 Philosophy
+# 000 理念
 
-xenra-superagent is a framework, and also a way of working with an agent. Its core principle:
+[English](000-philosophy.en.md) · 中文
 
-**Take as little human attention as possible, and give as much value as possible.**
+Xenra-SuperAgent 既是一套框架，也是一种与智能体协作的工作方式。它的核心原则是：
 
-Every part of the project is judged by the attention it costs. A message, a notification, a question, a setting, a panel element and a paragraph of documentation each cost someone's attention, and each has to give more value than that, or it is removed.
+**尽可能少占用人的注意力，尽可能多交付价值。**
 
-## What follows for the agent
+项目的每一部分都以它消耗的注意力来衡量。一条消息、一个通知、一个问题、一项设置、一个面板元素、一段文档，都要占用某人的注意力，因此都必须带来超过这份成本的价值，否则就删掉它。
 
-- **It acts only when asked, or when a written rule allows it.** A request counts only when it addresses the agent directly and comes from a person the team allowed: one on an allowed list, or anyone in a conversation the team opened to requests. Work nobody asked for needs a rule the team wrote, and starts in a mode that only records what the agent would have done.
-- **It speaks only when a person must act or can use a result.** It confirms a request once and names what it will do. It stays quiet while it works. It writes again when a result is ready, when it needs a decision, or when it cannot finish. Messages are short and go to the conversation where the request was made.
-- **It asks one concrete question at a time,** in a structured form, so the question reaches the person instead of staying inside a long report.
-- **It stops by impact, not by effort.** A local change goes as far as a reviewable result. A change that needs a design decision stops with a clear question.
-- **It reports honestly.** A draft is marked unfinished, a failure is reported as a failure, and a limit is never bypassed to avoid asking.
+## 对智能体的要求
 
-## What follows for the design
+- **只在被请求时行动，或只在书面规则允许时行动。** 只有直接对智能体提出、且来自团队允许的人（名单上的人，或团队开放接单的对话里的任何人），才算一次请求。没有人要求的工作需要团队写下的规则，并且从只记录、不实际执行的模式开始。
+- **只在有人必须行动、或能用上结果时说话。** 它确认一次请求，并说明将要做什么；干活时保持安静。结果就绪、需要决定、或无法完成时，才再次开口。消息要短，并回到提出请求的那个对话里。
+- **一次只问一个具体问题，** 用结构化的形式，让问题真正到达人那里，而不是淹没在一份长报告里。
+- **按影响停下，而不是按工作量停下。** 局部改动一直做到可评审的结果；需要设计决定的改动，则带着一个清晰的问题停下。
+- **如实汇报。** 草稿标明未完成，失败就报失败，绝不为了回避提问而绕开限制。
 
-- **Few concepts.** The design has only its domain concepts, such as a Source, and their concrete implementations, such as GitHub and Feishu. A business need becomes an attribute of one of them, or a prompt the agent follows. The design does not add a concept for it.
-- **Few settings.** A default replaces a setting when one value suits almost every team. Behaviour that a team describes in words is prompt text, not a setting.
-- **A panel that shows only what needs a person.** It lists first what waits for a person. A healthy state takes no space.
-- **Documents read in order.** Each numbered document builds only on the ones before it, so a reader never needs a concept that has not been introduced yet.
+## 对设计的要求
 
-## Responsibility
+- **概念要少。** 设计里只有它的领域概念（例如来源）及其具体实现（例如 GitHub 和飞书）。业务需求要么成为某个概念的属性，要么成为智能体遵循的提示词；设计不为它新增概念。
+- **设置要少。** 当同一个值几乎适合所有团队时，用默认值代替设置项。团队用文字描述的行为属于提示词，不属于设置。
+- **面板只显示需要人处理的事。** 它首先列出等人处理的内容；健康状态不占版面。
+- **文档按顺序阅读。** 每篇编号文档只建立在它之前的文档之上，读者不需要用到尚未介绍的概念。
 
-The agent comments, opens pull requests and messages people under accounts your team sees every day. Every message it sends costs your colleagues' attention, and you are responsible for it. The more the agent can do, the more care its operator owes the team:
+## 责任
 
-- **Start narrow.** Begin with a short allowed list and with proactive work only recorded. Widen both once what the agent would have done looks right.
-- **Tune for less noise.** When the agent is noisy, make its prompts shorter and stricter, or pause it. Do not add more messages to explain the noise.
-- **Do not use it to produce volume.** Mass pull requests, broadcast messages and busywork cost the team more than they give.
-- **Own what it says.** Read what the agent posts in your name, and correct it in the prompts when it is wrong.
+智能体使用的账号，是团队每天都会看到的账号；它在这些账号下评论、开 Pull Request、给人发消息。它发出的每条消息都在消耗同事的注意力，这份责任由你承担。智能体能做的事越多，运营者该为团队付出的谨慎就越多：
 
-The goal is the right help at the right time, and nothing at any other time.
+- **从小处开始。** 先用一份很短的允许名单，并让主动工作只记录不执行。等它本来会做的事看起来对了，再逐步放宽。
+- **为减少噪音而调优。** 智能体太吵时，把它的提示词写得更短更严，或者暂停它；不要增加更多消息去解释噪音。
+- **不要用它制造产量。** 批量 PR、群发消息和无意义的忙碌，让团队付出的比得到的多。
+- **为它说的话负责。** 读一读智能体以你的名义发布的内容，错了就去改提示词。
+
+目标是：在对的时候给出对的帮助，其他时候什么都不说。

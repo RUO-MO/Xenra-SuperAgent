@@ -1,203 +1,213 @@
-# 003 Execution
+# 003 执行
 
-This document follows an accepted Ticket through execution, delivery and recovery. It builds on [001 Domain model](001-domain.md) and [002 Authorization](002-authorization.md).
+[English](003-execution.en.md) · 中文
 
-## Ticket stages
+本文档沿一个已接单的工单，走过执行、交付与恢复。它建立在 [001 领域模型](001-domain.md) 和 [002 授权](002-authorization.md) 之上。
 
-Each open Ticket has one stage, determined by what it is waiting for. Read the table from top to bottom; the first matching row wins.
+## 工单阶段
 
-| Stage | Condition | Panel label |
+每个活动工单只有一个阶段，由它在等待什么决定。从上往下读这张表，第一个匹配的行胜出。
+
+| 阶段 | 条件 | 面板标签 |
 | --- | --- | --- |
-| person / delivery | Delivering an Input to the Executor Session failed; it is retried after 2 seconds, then after a delay that doubles up to a minute, and a success, a new Assignment or the Ticket's end clears it | Input undelivered |
-| person / answer | It has an Attention | Awaiting answer |
-| person / review | The latest Report is `ready` | Awaiting review |
-| person / blocked, failed | The latest Report is `blocked` or `failed`, and no person's message reached the Ticket since | Blocked · Failed |
-| working / queued | No Assignment, or a pending one | Queued |
-| idle | The latest Report is `waiting`, or the Assignment ended | Waiting for a Trigger |
-| working | Everything else | Working |
+| person / delivery | 向执行器 Session 送达输入失败；2 秒后重试，之后延迟翻倍最多到一分钟，成功、新的派工或工单结束都会清除它 | 输入未送达 |
+| person / answer | 它有"待人工决定" | 等待答复 |
+| person / review | 最新报告是 `ready` | 等待评审 |
+| person / blocked、failed | 最新报告是 `blocked` 或 `failed`，且此后没有人的消息到达该工单 | 受阻 · 失败 |
+| working / queued | 没有派工，或派工处于 pending | 排队中 |
+| idle | 最新报告是 `waiting`，或派工已结束 | 等待触发 |
+| working | 其余一切 | 执行中 |
 
-A `person` stage means the Ticket cannot continue without human input. A new human message releases a `blocked` or `failed` Ticket to its Executor, so it moves to the next matching stage, usually `working`.
+`person` 阶段意味着工单没有人的输入就无法继续。新的人的消息会把 `blocked` 或 `failed` 的工单交还给它的执行器，因此它会移到下一个匹配的阶段，通常是 `working`。
 
-An `idle` Ticket has finished its turn without an outstanding question. A Trigger on a subscribed Thread can continue it.
+`idle` 的工单已经结束该轮，且没有悬而未决的问题。已订阅线程上的触发可以使它继续。
 
-## The Executor
+## 执行器
 
-Each Ticket gets an Executor Session named `worker-<ticket id>` and a directory named after the Ticket's short name. Directories are created under the configured execution root, which defaults to `<stateDir>/work`.
+每个工单得到一个名为 `worker-<工单 id>` 的执行器 Session，以及一个以工单短名命名的目录。目录创建在配置的执行根目录下，默认是 `<stateDir>/work`。
 
-Executor Sessions run commands without approval as the operator's OS user. Their `xenra-superagent-worker` preset contains the tools needed for work and moves foreground shell commands to background jobs after 5 seconds. This lets a worker receive new messages at the next step instead of waiting for a long command to finish.
+执行器 Session 以运营者的操作系统用户身份、无需批准即可运行命令。它们的 `xenra-superagent-worker` 预置包含工作所需的工具，并在前台 shell 命令超过 5 秒时把它转入后台作业。这样执行器可以在下一步收到新消息，而不必等一条长命令跑完。
 
-The main Session uses `xenra-superagent-router`, with the same 5-second shell and job-wait limits and a smaller tool set for routing. Sessions retain the preset selected at creation. Worker subagents use DeepSeek Harness's `standard` preset.
+主 Session 使用 `xenra-superagent-router`，具有相同的 5 秒 shell 与作业等待限制，以及更小的路由用工具集。Session 保持创建时选定的预置。执行器的子智能体使用 DeepSeek Harness 的 `standard` 预置。
 
-### Background work and worker slots
+### 后台工作与执行器槽位
 
-When a turn ends with shell jobs or subagents still running, the Ticket keeps its worker slot and stays working. It is not reported as waiting, and the main Session receives no waiting report. A completed job or subagent wakes the Executor with its result in the same slot. Once a turn ends with no background work, the Executor reports waiting normally.
+当一轮结束时仍有 shell 作业或子智能体在运行，工单保留它的执行器槽位并保持"执行中"。它不会被报告为等待，主 Session 也不会收到等待报告。作业或子智能体完成时，会在同一槽位用结果唤醒执行器。当一轮结束时已没有后台工作，执行器才正常报告等待。
 
-After each turn, background work has at most 30 minutes to finish. At that limit, shell jobs are killed and the Ticket is reported waiting. The report includes the Executor's last words and which jobs were killed or subagents remain active. Subagents are allowed to continue. The Executor reads killed-job results on its next turn.
+每轮之后，后台工作最多有 30 分钟完成。到达该上限时，shell 作业被终止，工单报告为等待。报告包含执行器最后的原话，以及哪些作业被终止、哪些子智能体仍活跃。子智能体允许继续。执行器在下一轮读取被终止作业的结果。
 
-A handoff to a person frees the slot immediately and leaves the Report in effect. This applies after a `ready` Report or a question, unless another Input arrived since, and after any `blocked` or `failed` Report.
+移交给会立刻释放槽位，并让报告继续生效。这适用于 `ready` 报告或提出问题之后（除非此后又到达了输入），也适用于任何 `blocked` 或 `failed` 报告之后。
 
-At handoff, subagents stop. Shell jobs, such as a server offered for review, may continue until the Assignment ends. They hold no slot and are exempt from the 30-minute limit, including after later turns. Their completion does not wake the Executor; it reads the results on its next turn.
+移交时子智能体停止。shell 作业（例如为评审而起的服务）可以继续，直到派工结束。它们不占槽位，也不受 30 分钟限制，后续轮次之后也一样。它们完成时不会唤醒执行器；执行器在下一轮读取结果。
 
-A person can also start a turn by writing directly in the Executor Session. Its background work follows the same rules.
+人也可以直接在执行器 Session 里写话来开启一轮。它的后台工作遵循同样的规则。
 
-When an Assignment ends, its shell jobs are killed without waking the Session. Its subagents are released, and any completion turns they wake are dropped. The replacement Assignment and its waiting Inputs start after that shutdown finishes.
+派工结束时，它的 shell 作业被终止且不唤醒 Session。它的子智能体被释放，它们唤醒的完成轮次也会被丢弃。替代的派工和它等待中的输入在关闭完成后才开始。
 
-Stopping or restarting the plugin inside the DeepSeek Harness process uses the same shutdown path. Inputs not yet taken into Session history are retained. Shutdown waits up to 10 seconds for each worker's background work; a process restart ends that work outright. An Assignment interrupted while busy restarts with a recovery note.
+在 DeepSeek Harness 进程内停止或重启插件走同一条关闭路径。尚未进入 Session 历史的输入会保留。关闭时每个执行器的后台工作最多等 10 秒；进程重启则直接结束这些工作。忙碌中被中断的派工会带一份恢复说明重新开始。
 
-Worker subagents, including nested ones, use DeepSeek Harness's `standard` preset with the worker's permissions. They retain only the worker's allowed work tools, and lose those tools when the Ticket ends. Under `standard`, a shell command moves to the background after 60 seconds. A subagent's jobs are killed when it ends.
+执行器的子智能体（包括嵌套的）使用 DeepSeek Harness 的 `standard` 预置，并具有执行器的权限。它们只保留执行器被允许的工作工具，并在工单结束时失去这些工具。在 `standard` 下，shell 命令超过 60 秒转入后台。子智能体的作业在它结束时被终止。
 
-### Preparing a Ticket directory
+### 准备工单目录
 
-Before the first Assignment, if the Ticket directory does not exist, the prepare command runs once with `sh` in the execution root. It has ten minutes to finish. Without a prepare command, the worker starts in an empty directory.
+在第一次派工之前，如果工单目录不存在，prepare 命令会在执行根目录下用 `sh` 运行一次。它有十分钟完成。没有 prepare 命令时，执行器在空目录中开始。
 
-A failed command fails the Ticket and records its output. A retry or a person's message on one of the Ticket's Threads tries preparation again. A typical command uses `git worktree` to create a checkout. A pull request belongs to the Ticket when its branch's last path segment matches the Ticket's short name.
+命令失败会使工单失败，并记录其输出。重试，或人发在工单某个线程上的消息，会再次尝试准备。典型命令用 `git worktree` 创建检出。当 Pull Request 分支的最后一段路径与工单短名一致时，该 Pull Request 属于这个工单。
 
-### Concurrency
+### 并发
 
-A Ticket holds a worker slot from the start of a launch, including preparation, or from the delivery that wakes its idle Executor. It also holds the slot throughout an active turn.
+工单从启动开始（包括准备阶段）、或从唤醒其空闲执行器的那次送达开始，持有一个执行器槽位。它在整个活动轮次中也一直持有该槽位。
 
-The configured concurrency limit applies to these slots, with one extra slot for a person's message or a status request. Such a wake can use the extra slot when normal slots are full, and takes the next free slot before a new launch. New work therefore cannot prevent a person from continuing an existing Ticket.
+配置的并发上限作用于这些槽位，另外为人的消息或状态请求保留一个额外槽位。正常槽位占满时，这类唤醒可以使用额外槽位，并在新启动之前优先取得下一个空闲槽位。因此新工作不会妨碍人继续已有的工单。
 
-Other Inputs, such as CI results, wait for a normal slot. A launch waits in `working / queued` until a slot is free. Launches run concurrently, so a slow prepare command delays only its own Ticket.
+其他输入（例如 CI 结果）等待正常槽位。启动会在 `working / queued` 中等待，直到有槽位空闲。多个启动并发进行，所以一条慢的 prepare 命令只会拖慢它自己的工单。
 
-### Execution variables
+### 执行变量
 
-The prepare command and Executor instructions receive the same execution variables. The command reads environment variables; the Executor reads their values and descriptions in its prompt. None contains credentials.
+prepare 命令和执行器说明收到同一组执行变量。命令读取环境变量；执行器在提示词中读取这些变量的值和说明。其中不含任何凭据。
 
-| Variable | Registered by | Value |
+| 变量 | 注册者 | 值 |
 | --- | --- | --- |
-| `XENRA_SUPERAGENT_DIR`, `XENRA_SUPERAGENT_NAME`, `XENRA_SUPERAGENT_TICKET` | Executor | The Ticket's directory, short name and id |
-| `XENRA_SUPERAGENT_BLOCKED_COMMANDS` | Executor | Commands the Executor may not run |
-| `XENRA_SUPERAGENT_GITHUB_REPOSITORY` | GitHub | The repository the Source watches, `owner/name` |
-| `XENRA_SUPERAGENT_GITHUB_ACCOUNT`, `XENRA_SUPERAGENT_GITHUB_COMMIT_EMAIL` | GitHub | The agent account and its commit email |
-| `XENRA_SUPERAGENT_GITHUB_NUMBER`, `XENRA_SUPERAGENT_GITHUB_PR_HEAD` | GitHub | The Issue or pull request that started the Ticket, and its head ref when it is a pull request |
-| `XENRA_SUPERAGENT_FEISHU_BOT`, `XENRA_SUPERAGENT_FEISHU_CHAT` | Feishu | The bot, and the chat that started the Ticket |
+| `XENRA_SUPERAGENT_DIR`、`XENRA_SUPERAGENT_NAME`、`XENRA_SUPERAGENT_TICKET` | 执行器 | 工单的目录、短名和 id |
+| `XENRA_SUPERAGENT_BLOCKED_COMMANDS` | 执行器 | 执行器不得运行的程序，以空格分隔 |
+| `XENRA_SUPERAGENT_GITHUB_REPOSITORY` | GitHub | 来源监听的仓库，`owner/name` |
+| `XENRA_SUPERAGENT_GITHUB_ACCOUNT`、`XENRA_SUPERAGENT_GITHUB_COMMIT_EMAIL` | GitHub | 智能体账号及其提交邮箱 |
+| `XENRA_SUPERAGENT_GITHUB_NUMBER`、`XENRA_SUPERAGENT_GITHUB_PR_HEAD` | GitHub | 发起该工单的 Issue 或 Pull Request；是 Pull Request 时还包括它的 head 引用 |
+| `XENRA_SUPERAGENT_FEISHU_BOT`、`XENRA_SUPERAGENT_FEISHU_CHAT` | 飞书 | 机器人，以及发起该工单的群 |
 
-Ticket-specific values come from its directory and originating Trigger. Other values come from the current deployment settings. Only the panel can change execution environment settings; text sent to the main Session cannot change the configured shell command.
+工单专属的值来自它的目录和发起它的触发。其他值来自当前部署设置。只有面板可以修改执行环境设置；发给主 Session 的文本改不了配置好的 shell 命令。
 
-Workers reach GitHub through the agent account's `gh` and Feishu through the bot's `lark-cli`. Blocked commands fail when invoked by name.
+执行器通过智能体账号的 `gh` 访问 GitHub，通过机器人的 `lark-cli` 访问飞书。被禁止的命令在按名字调用时会失败。
 
-These wrappers and directories establish defaults, not a security boundary. A worker can still execute a program by absolute path.
+这些包装脚本和目录建立的是默认值，不是安全边界。执行器仍然可以按绝对路径执行程序。
 
-## Merging
+## 合并
 
-Auto-merge is governed by the **Delivery requirements** prompt. The host has no merge-specific decision logic.
+自动合并由 **交付要求** 提示词管辖。宿主里没有专门处理合并的逻辑。
 
-By default, the Executor never enables auto-merge as the agent account: GitHub attributes the merge to whoever enabled it. Delivery requirements must name another account's CLI for merging. Without one, people merge the pull request.
+默认情况下，执行器绝不以智能体账号开启自动合并：GitHub 会把合并记在开启自动合并的账号名下。交付要求必须写明另一个账号的 CLI 用于合并。没有它，就由人来合并 Pull Request。
 
-The default instructions allow auto-merge only for a pull request opened for the Ticket, when it is ready, the required approvals cover the head commit, and additions plus deletions total fewer than 200 lines. Before pushing another revision, the Executor withdraws auto-merge.
+默认说明只允许对为该工单开启的 Pull Request 启用自动合并，条件是它已就绪、所需批准覆盖 head 提交，且新增行数加删除行数合计少于 200 行。在推送又一个修订之前，执行器会撤回自动合并。
 
-Reviews without a body, such as approvals, also arrive as Triggers and can wake an Executor waiting for review. These instructions govern the agent, not GitHub's merge rules. To enforce approvals, require them in branch protection and dismiss stale approvals. Omit the merge CLI or remove the auto-merge paragraph to require manual merging.
+没有正文的评审（例如批准）同样会作为触发到达，并能唤醒正在等待评审的执行器。这些说明约束的是智能体，而不是 GitHub 的合并规则。要强制批准，请在分支保护里要求批准并作废旧批准。省略合并 CLI 或删掉自动合并那段，就要求人工合并。
 
-## How a Ticket ends
+## 工单如何结束
 
-- **Ready without a pull request:** a `ready` Report ends the Ticket as completed.
-- **Nothing to do:** an Executor that finds no work for a person to act on, such as a request that does not reproduce or is superseded, reports `dropped`. The Ticket ends without a message, unless a matched rule asks for one, and a person's later message on its Threads resumes it.
-### Pull requests
+- **就绪且没有 Pull Request：** `ready` 报告使工单以完成结束。
+- **无事可做：** 执行器发现没有需要人处理的工作时（例如请求无法复现或已被替代），报告 `dropped`。工单静默结束，不发送消息，除非命中的规则要求发送；人之后在其线程上的消息会使它恢复。
 
-A Ticket follows the pull request it started from once its Executor reports it. It also follows each pull request opened from its branch once reported by the Executor or found by the GitHub Source. Reopened pull requests are followed again.
+### Pull Request
 
-The Ticket is done when none of the pull requests it opened remain open. If it opened none, all pull requests it follows must be closed. It then ends with the outcome of the last relevant close and keeps its Subscriptions, allowing a later human comment to resume it.
+执行器报告之后，工单会跟随它起初来自的那个 Pull Request。它也会跟随从其分支开启的每个 Pull Request——无论是执行器报告的，还是 GitHub 来源发现的。重新打开的 Pull Request 会再次被跟随。
 
-A close does not end the Ticket while resumed, retried or recovered work is unfinished. It also waits if the Executor acknowledged or answered a follow-up it owns but has not since made a non-progress Report or ended a turn after reading that message. A later `ready` Report ends the Ticket once the same pull-request completion rule is satisfied.
+当它开启的 Pull Request 都不再打开时，工单完成。如果它没开启过任何 Pull Request，那么它跟随的所有 Pull Request 都必须关闭。随后它按最后一次相关关闭的结果结束，并保留订阅，使之后的人的评论能恢复它。
 
-Chat Channels receive one final notice about the pull-request outcome. GitHub already displays the outcome on the pull request itself. Removing a Ticket's Subscription to a pull request also stops it following that pull request.
+恢复、重试或恢复中的工作尚未完成时，关闭不会结束工单。若执行器确认或回答了它持有的后续消息，但此后尚未作出非进展报告、也没有在读过该消息后结束一轮，关闭同样会等待。之后的 `ready` 报告在满足同一套 Pull Request 完成规则后结束工单。
 
-"Awaiting review" therefore means a `ready` Report with a pull request.
+聊天渠道会收到一条关于 Pull Request 结果的最终通知。GitHub 本身已经在 Pull Request 上显示了结果。移除工单对某个 Pull Request 的订阅，也会停止跟随该 Pull Request。
 
-### Follow-ups and context Threads
+因此"等待评审"意味着：有一份 `ready` 报告，且带有 Pull Request。
 
-The Executor decides human follow-ups on its Ticket's own Threads. It handles in-scope requests and hands back requests beyond its scope or for another Ticket. Once no Executor owns the message, it becomes a candidate for the main Session. The main Session may otherwise act on the follow-up only to stop work at the person's request.
+### 后续与上下文线程
 
-An Input counts as read after the Session takes it into a step and subsequently reports or ends a turn. When a Ticket ends, unread messages that were not acknowledged, answered or handed back return to Eval, as described in [002 Authorization](002-authorization.md). Read messages left without action, such as thanks, do not.
+执行器判断发生在其工单自己线程上的人的后续消息。它处理范围内的请求，把超出范围或属于其他工单的请求交回。一旦没有执行器持有该消息，它就成为主 Session 的候选。除此之外，主 Session 只能按人的要求停止工作。
 
-Threads followed only for context still deliver messages, but do not give the Ticket ownership of human follow-ups or resume ended Tickets. Those messages can be assessed independently.
+输入在 Session 把它纳入某一步、并随后作出报告或结束一轮之后，才算已读。工单结束时，未被确认、未被回答、也未被交回的未读消息会回到评估，如 [002 授权](002-authorization.md) 所述。已读但未采取行动的消息（例如道谢）不会。
 
-Sources poll subscribed Threads while a live Ticket subscribes, and for two weeks after the later of the last Trigger and the subscribing Tickets' end. Afterwards, messages arrive only through ordinary intake: GitHub notifications or Feishu live events.
+仅作上下文关注的线程仍会送达消息，但不赋予工单对后续消息的归属，也不会使已结束的工单恢复。这些消息可以独立地接受研判。
 
-## Failure and recovery
+只要还有活动工单在订阅，来源就会轮询已订阅线程；并持续到最后一个触发与该订阅工单结束之中较晚者之后两周。此后消息只通过普通入口到达：GitHub 通知或飞书实时事件。
 
-### Executor blocked or failed
+## 失败与恢复
 
-When an Executor Session reports `blocked` or `failed`, or fails to start or errors, which records `failed`, the Ticket takes no automatic Input.
+### 执行器受阻或失败
 
-A passing failure of the model provider or the network, an HTTP 408, 429 or 5xx or a refused, reset or timed-out connection, is tried again first, three times with a growing backoff: a launch runs again, and a worker whose turn failed is told to go on; a failed prepare command is not tried again.
+当执行器 Session 报告 `blocked` 或 `failed`，或启动失败、出错（记为 `failed`）时，工单不接收任何自动输入。
 
-Once failed, CI and bot messages are recorded on it, but they are not delivered and do not wake the Session.
+模型服务或网络的一次性故障（HTTP 408、429、5xx，或连接被拒绝、被重置、超时）会先重试三次，退避逐步增长：启动会重跑；一轮失败的执行器会被要求继续；失败的 prepare 命令不重试。
 
-Its tools stay available, so a person can continue in the Session directly.
+一旦失败，CI 和机器人的消息会记录在它上面，但不送达、也不唤醒 Session。
 
-A launch that failed is not tried again on its own.
+它的工具仍然可用，人可以直接在该 Session 里继续。
 
-A person's message, a later Report that is neither `blocked` nor `failed`, or a retry ends the hold.
+失败的启动不会自行重试。
 
-It is worked out from the stored Reports and Inputs, so a restart keeps it.
-### Retry
+人的消息、之后既不是 `blocked` 也不是 `failed` 的报告、或一次重试，都会解除该暂停。
 
-Available while an open Ticket is in `person / delivery`, `person / blocked` or `person / failed`: a new Assignment, which starts its worker again and takes the Inputs that wait, is the remedy for each.
+该暂停由存储的报告和输入推算得出，因此重启后仍然存在。
 
-Once a person's message reached a blocked or failed Ticket, the Executor has the message, so the Ticket shows as working, or as queued when a failed launch starts again, and offers no retry, unless delivering that message failed.
+### 重试
 
-A retry ends the current Assignment and starts a new one in the same Executor Session, directory, branch and pull request.
+在活动工单处于 `person / delivery`、`person / blocked` 或 `person / failed` 时可用：一次新的派工会重启它的执行器并接收等待中的输入，这三者都靠它解决。
 
-The Executor model applies only when a Session is created; an existing Session keeps its model.
-### Restart
+一旦人的消息到达了受阻或失败的工单，执行器就持有该消息，因此工单显示为执行中（启动失败重新开始时显示为排队中），并且不再提供重试——除非送达该消息本身失败了。
 
-Running Assignments end with "host restarted" and new ones start with a recovery note that tells the Executor to check its directory, git history and GitHub before repeating any outside action, oldest Ticket first.
+重试会结束当前派工，并在同一执行器 Session、目录、分支和 Pull Request 上开启新的派工。
 
-Assignments that are waiting, ready, blocked or failed stay as they are, unless an Input reached them after that Report, in which case they start again too.
+执行器模型只在创建 Session 时生效；已有 Session 保持它原来的模型。
 
-Sessions, directories, Subscriptions, pending messages and the stored work below survive a restart, and so does the record of which messages each Executor Session took into its history, which a step does once it claimed them and before its model call: a message taken by a turn the restart cut off counts as read once a Report or the end of a turn follows, while one a step claimed but a cancel or error cut off before the history counts as unread.
+### 重启
 
-A retry or a restart gives the new Assignment again the messages delivered to the Assignment it replaces that its Executor Session did not take, which a cancel or a cut-off step may have dropped; a copy still waiting in the Session, kept by a restart or persisted across a crash, is taken out before the new Assignment's first message, so the new delivery is the only copy.
-### Stored work
+正在运行的派工会以"宿主已重启"结束，新的派工会带一份恢复说明开始，要求执行器在重复任何外部操作之前，先检查它的目录、git 历史和 GitHub，最早的工单优先。
 
-What xenra-superagent does after a decision, such as relaying a candidate, a follow-up or a report to the main Session, launching an Assignment or delivering an Input, is stored first and done afterwards.
+处于等待、就绪、受阻或失败状态的派工保持原样，除非在该报告之后有输入到达它们；那样它们也会重新开始。
 
-A relay or a delivery that fails, such as when its Session cannot be reached, is retried after 2 seconds, then after a delay that doubles up to a minute; a launch that fails fails its Ticket, unless the failure was a passing one, as above.
+Session、目录、订阅、待发消息以及下面存储的工作都能熬过重启；"每个执行器 Session 把哪些消息纳入了历史"这份记录也一样——某一步在认领消息之后、调用模型之前只做一次记录：被重启切断的那一轮纳入了的消息，只要之后有报告或一轮结束，就算已读；而某一步已认领、但在进入历史之前被取消或错误切断的消息，算未读。
 
-Each kind of work reports an error among the overview's system problems only after one item failed three times in a row; a failed Input delivery shows on its Ticket instead.
+重试或重启会把被替代的派工收到、而其执行器 Session 未纳入的消息再次交给新派工（取消或被切断的步骤可能丢掉它们）；仍留在 Session 中等待的那一份，无论由重启保留还是跨崩溃持久化，都会在新派工的第一条消息之前被移除，使新送达成为唯一的副本。
 
-Relays to the main Session keep their order, and so do notices; a failed one holds back the later ones of its kind.
-### Source failure
+### 存储的工作
 
-The GitHub Source reads each Issue, pull request and Thread on its own: a failed read keeps its error on its Thread, is read again on the next poll, and counts towards an error of the Source, which it reports after three failed polls in a row by default; any successful poll resets the count.
+Xenra-SuperAgent 在作出决定之后要做的事——例如把候选、后续或报告转达给主 Session，启动派工，或送达输入——先被存储，然后再执行。
 
-GitHub answers 404 also when the agent lost access to a private repository, so a 404 is retried.
+转达或送达失败时（例如它的 Session 无法到达），会在 2 秒后重试，之后延迟翻倍最多到一分钟；启动失败会使它的工单失败，除非如上所述属于一次性故障。
 
-A notified Issue or pull request whose reads keep failing is dropped a day after its first failed read, and at once when GitHub reports it as deleted; it then no longer fails the poll, its Thread keeps the error, and the Source's state names it.
+每种工作只有在连续三次失败之后，才会在总览的系统问题中报错；输入送达失败则显示在它的工单上。
 
-Its read position stays where it was, so a later notification or a poll of its Thread reads what the failed reads missed.
+发往主 Session 的转达保持顺序，通知也一样；一条失败会挡住同类的后续项。
 
-The Feishu event consumer reports every failure, and polling of subscribed topics keeps each failure on its Thread.
+### 来源失败
 
-A malformed item in a GitHub list or a Feishu page is skipped, and the Source's state counts it.
-### Channel failure
+GitHub 来源独立读取每个 Issue、Pull Request 和线程：读取失败会把错误留在该线程上，下次轮询再读，并计入来源的错误——默认连续三次轮询失败后报出；任何一次成功轮询都会重置计数。
 
-Outgoing messages are stored and sent as stored work, retried with backoff from 5 seconds, doubling up to 300.
+智能体失去对私有仓库的访问时，GitHub 也会返回 404，所以 404 会重试。
 
-A Ticket's messages to one conversation go out in the order they were queued, so its acknowledgement comes before its later answer or result: a message waits while an earlier one of the same Ticket to the same conversation has not gone out, until that one has failed three times in a row and shows as a problem.
+被通知的 Issue 或 Pull Request 若读取持续失败，在首次失败读取之后一天被丢弃；GitHub 报告它已删除时则立即丢弃。此后它不再使轮询失败，它的线程保留错误，来源状态会点名它。
 
-Messages of other Tickets, and messages of no Ticket, do not wait for it.
+它的读取位置停在原处，因此之后的通知或对其线程的轮询会读到失败的读取漏掉的内容。
 
-A message with failed attempts is a system problem until it goes out or is withdrawn.
+飞书事件消费者报告每一次失败；对已订阅话题的轮询把每次失败留在其线程上。
 
-A message is dropped only when its Source no longer listens to the conversation, or when the Source answers that the conversation can never receive it; while its Source is off, it waits.
+GitHub 列表或飞书分页中的畸形条目会被跳过，来源状态会计入它。
 
-The Sources answer that for a deleted Issue or a locked conversation on GitHub, and for a recalled message or one Feishu no longer finds on Feishu.
+### 渠道失败
 
-A reply to a review comment that no longer exists goes to the pull request's conversation instead.
+发出的消息作为存储的工作存储并发送，退避从 5 秒起重试，翻倍最多到 300 秒。
 
-A dropped message keeps its record, with when and why it was dropped and the Ticket it was for, so it is never queued again; a dropped acknowledgement reads as dropped, not sent.
-### Pause processing
+工单发往同一个会话的消息按入队顺序发出，因此它的确认会早于之后的回答或结果：同一工单发往同一会话的某条早前消息尚未发出时，后面的消息会等待，直到那条连续失败三次并显示为问题。
 
-Stops dispatch, new Evals, Eval timeouts, Input delivery and replies; a launch already under way waits until processing resumes.
+其他工单的消息、以及无工单的消息，不会为它等待。
 
-Sources keep recording Triggers, and a running Executor turn is not interrupted.
+有失败尝试的消息在发出或被撤回之前，都算系统问题。
 
-A person's message to an ended Ticket waits: the first pass after the pause resumes the Ticket, if its Mandate holds under the Policy then.
+只有当来源已不再监听该会话、或来源回复该会话永远无法收到时，消息才会被丢弃；来源关闭期间，它会等待。
 
-An Eval in progress does not expire during a pause; its deadline moves later by the pause's length.
-### Invalid configuration
+GitHub 上已删除的 Issue 或已锁定的会话，以及飞书上被撤回的消息或飞书已找不到的消息，来源都会给出这样的回答。
 
-A stored Source configuration that its kind rejects disables that Source instance.
+针对已不存在的 review 评论的回复，改为发到 Pull Request 的会话。
+
+被丢弃的消息保留记录，写明何时、为何被丢弃，以及它原本属于哪个工单，因此不会再被排队；被丢弃的确认显示为"已丢弃"，而不是"已发送"。
+
+### 暂停处理
+
+停止派发、新的评估、评估超时、输入送达和回复；已经开始的一次启动会等到处理恢复。
+
+来源继续记录触发，正在运行的执行器轮次不会被打断。
+
+人发给已结束工单的消息会等待：暂停结束后的第一次执行会恢复该工单，前提是它的授权在当时的策略下仍然成立。
+
+进行中的评估在暂停期间不会过期；它的截止时间会按暂停时长顺延。
+
+### 无效配置
+
+来源种类拒绝的已存储来源配置会禁用那个来源实例。

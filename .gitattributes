@@ -1,0 +1,24 @@
+# Normalize line endings: text files are stored and checked out as LF, so the
+# POSIX script and the committed build output behave the same everywhere.
+* text=auto eol=lf
+
+# The service script is run by Python directly; it must never gain CRLF.
+scripts/* text eol=lf
+
+# Windows-only files keep their native line endings.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+*.sqlite binary
+*.asar binary

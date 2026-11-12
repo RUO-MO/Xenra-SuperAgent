@@ -1,155 +1,157 @@
-# 002 Authorization
+# 002 授权
 
-Authorization determines who may start work and what that work may include. This document builds on [001 Domain model](001-domain.md).
+[English](002-authorization.en.md) · 中文
 
-The host enforces allowed lists, rules and Mandates. Messages, comments and quoted documents are inputs to a decision; they cannot change those permissions.
+授权决定谁可以发起工作，以及这份工作可以包含什么。本文档建立在 [001 领域模型](001-domain.md) 之上。
 
-## Two paths for a Trigger
+宿主强制执行允许名单、规则和授权。消息、评论和被引用的文档只是决定的输入；它们改变不了这些权限。
 
-### Eval: deciding whether to start work
+## 触发的两条路径
 
-The Source records whether a message addresses the agent: `mention` for a mention of the bot or agent account, and `direct` for a direct message. The gate checks the sender and the Source's Policy:
+### 评估：决定是否开始工作
 
-- An allowed person who addresses the agent makes an explicit request.
-- A person's follow-up on a Thread with Tickets follows the rules below.
-- Other human messages use the admission table for their receiving scope.
-- A bot on the Source's bot list can produce an inferred candidate, never an explicit request. Other bots are not admitted.
+来源会记录一条消息是否针对智能体：`mention` 表示 @ 了机器人或智能体账号，`direct` 表示私信。准入检查发送者和来源的策略：
 
-### Subscriptions: continuing existing work
+- 名单上的人针对智能体发言，构成明确请求。
+- 人在已有工单的线程上的后续发言，按下面的规则处理。
+- 其他人的消息按其接收范围查准入表。
+- 来源机器人名单上的机器人可以产生推断候选，但永远不能构成明确请求。其他机器人不予准入。
 
-Every message on a subscribed Thread reaches its subscribed Tickets as context, including messages from bots and CI. This delivery bypasses the gate and grants no new authority. Each Ticket remains limited by its Mandate.
+### 订阅：继续已有的工作
 
-A person's message on a Ticket's own Thread belongs to that Ticket's Executor to decide. The same applies when the main Session attaches a message to a Ticket. While an Executor owns the message, it takes no Eval and gets no Decision. Each Executor either handles the request within its Ticket's scope or hands it back for routing elsewhere.
+已订阅线程上的每条消息都会作为上下文到达订阅它的工单，包括机器人和 CI 的消息。这条送达路径绕过准入，也不赋予任何新权限；每个工单仍受自己的授权约束。
 
-Ownership continues while the Ticket is live, even if a person removes its Subscription. It also covers an ended Ticket that was not stopped by a person and has the message waiting to resume it.
+人发在工单自己线程上的消息，归该工单的执行器判断。主 Session 把一条消息挂到工单上时也一样。执行器持有该消息期间，它不进入评估，也拿不到决定。执行器要么在工单范围内处理这个请求，要么把它交回以便路由到别处。
 
-The main Session receives a follow-up notice. While an Executor owns the message, the main Session may only stop work on the person's request; accept, attach, ignore and requeue are refused. A stop still passes through the gate with the follow-up strength described below.
+工单存活期间归属关系一直有效，即使有人移除了它的订阅。它同样覆盖已结束、但不是被人停止、且有待处理消息可以使它恢复的工单。
 
-### Handing back and releasing follow-ups
+主 Session 会收到一条后续通知。执行器持有该消息期间，主 Session 只能在人的要求下停止工作；接单、挂载、忽略和重新排队都会被拒绝。停止仍要经过准入，强度按下面描述的"后续"处理。
 
-An Executor hands a message back once when it asks for work beyond the Ticket's scope or belongs to another Ticket. The Ticket keeps its Subscription. If an attached Thread is unrelated, the Executor hands back the messages it owns there.
+### 交回与释放后续
 
-A message goes to a fresh Eval only after no Ticket still owns it. Its candidate includes the Executors' reasons. The gate judges it as an ordinary message on that Thread, and the main Session can accept it, attach it elsewhere or ignore it. Handing back a message the Ticket did not own, such as a bot message or one a person already sent to Eval, queues nothing.
+当执行器发现请求超出工单范围、或属于另一个工单时，它可以交回一次。工单保留自己的订阅。如果挂载的线程无关，执行器会交回它在该线程上持有的消息。
 
-When a Ticket ends, it releases follow-ups its Executor did not read or take up. These include messages never delivered to the Executor and messages delivered after its last Report or turn end, provided it neither acknowledged, answered nor handed them back. Each released message goes to Eval when no other Ticket owns it. A stop ends only the stopped Ticket's work.
+只有当没有任何工单还持有这条消息时，它才会进入一次新的评估。它的候选会带上执行器给出的理由。准入按该线程上的普通消息判断它，主 Session 可以接单、挂到别处或忽略。交回一条工单本来就不持有的消息（例如机器人消息，或已经送进评估的消息）不会排队任何东西。
 
-A stopped Ticket does not send its stop message to Eval again unless another Ticket handed it back. The main Session that stopped it may accept the rest of the message as new work.
+工单结束时，会释放执行器没有读过或没有接手的后续消息，其中包括从未送达执行器的消息，以及在其最后一份报告或该轮结束之后送达、而执行器既未确认也未回答也未交回的消息。只要没有其他工单持有它，每条被释放的消息都会进入评估。停止只结束被停止工单的工作。
 
-A person can send an owned follow-up to Eval from the panel. If the main Session then attaches it back to a live Ticket, the Executor receives it again. The panel also offers re-evaluation when no effective judgement covers the message.
+被停止的工单不会把它的停止消息再次送进评估，除非别的工单把它交回。停止它的主 Session 可以把这条消息的其余部分当作新工作接单。
 
-### Context-only subscriptions
+人可以在面板上把人持有的后续消息送进评估。如果主 Session 随后又把它挂回一个活动工单，执行器会再次收到它。当没有任何有效判断覆盖这条消息时，面板也会提供重新评估。
 
-An Executor can follow a related Thread, such as another Issue or pull request, for context. Its messages reach the Ticket but grant no authority or follow-up strength. Human messages there do not resume an ended Ticket unless the main Session attaches a message from that Thread. Notes from the main Session about other work are also context only.
+### 仅作上下文的订阅
 
-Human messages that reach no Ticket, including Threads whose Tickets were stopped by a person, take the Eval path. Bot messages take that path independently of their delivery to subscribed Tickets.
+执行器可以关注一个相关的线程（例如另一个 Issue 或 Pull Request）作为上下文。该线程的消息会到达工单，但不赋予权限，也不带来后续强度。除非主 Session 挂载了来自该线程的消息，否则那里的人的消息不会使已结束的工单恢复。主 Session 关于其他工作的备注同样只是上下文。
 
-## Strength
+没有到达任何工单的人的消息（包括其工单被人停止的线程）走评估路径。机器人消息独立于它们送达已订阅工单这件事，同样走这条路径。
 
-| Strength | Cases |
+## 强度
+
+| 强度 | 情形 |
 | --- | --- |
-| explicit | A person on the list addresses the agent, or follows up on a Thread that already has a Ticket; a cell of the admission table set to explicit request |
-| inferred | A person not on the list follows up on a Thread with a Ticket, unless their cell of the admission table is explicit; a cell of the admission table set to inferred candidate; a message of a bot on the Source's bot list that addresses the agent or arrives where the Source receives every message |
-| not admitted | Any other bot's message, everything the admission table ignores, and every inferred case while the accept mode is `off` |
+| explicit（明确） | 名单上的人针对智能体发言，或是在已有工单的线程上后续发言；准入表某个单元格设为明确请求 |
+| inferred（推断） | 不在名单上的人在已有工单的线程上后续发言，除非其准入单元格设为明确；准入表某个单元格设为推断候选；来源机器人名单上的机器人，其消息针对智能体，或到达来源接收全部消息的地方 |
+| not admitted（不予准入） | 其他任何机器人的消息、准入表忽略的一切，以及接单模式为 `off` 时的所有推断情形 |
 
-For an unlisted person, an explicit admission cell takes precedence even on a Thread with Tickets and works in every accept mode. Otherwise their follow-up is inferred and is not admitted in `off` mode. Messages on Threads followed only for context use the admission table instead of follow-up strength.
+对不在名单上的人，明确的准入单元格优先，即使在已有工单的线程上也生效，并且在任何接单模式下都有效。否则其后续发言属于推断，在 `off` 模式下不予准入。仅在上下文关注的线程上的消息，使用准入表而不是后续强度。
 
-## Admission
+## 准入
 
-Each Source's Policy has an admission table. Its rows are receiving scopes:
+每个来源的策略都有一张准入表。它的行是接收范围：
 
-- **Feishu:** each configured chat, other chats the bot receives mentions from, and direct messages. Other chats are received only when **其他群** is set to **仅 @** on the Feishu card.
-- **GitHub:** new Issues, new pull requests, comments and the default branch's CI.
+- **飞书：** 每个已配置的群、机器人收到 @ 的其他群，以及私信。只有飞书卡片上的 **其他群** 设为 **仅 @** 时，其他群才会被接收。
+- **GitHub：** 新 Issue、新 Pull Request、评论，以及默认分支的 CI。
 
-A row has up to three cells. Each cell decides whether a message becomes an explicit request, an inferred candidate or nothing:
+一行最多有三个单元格。每个单元格决定一条消息是变成明确请求、推断候选，还是什么都不做：
 
-| Cell | Choices | Default |
+| 单元格 | 可选值 | 默认 |
 | --- | --- | --- |
-| On the list, not addressing the agent | inferred, ignore | inferred |
-| Not on the list, addressing the agent | explicit, inferred, ignore | ignore |
-| Not on the list, not addressing the agent | inferred, ignore | ignore |
+| 在名单上、未针对智能体 | inferred、ignore | inferred |
+| 不在名单上、针对智能体 | explicit、inferred、ignore | ignore |
+| 不在名单上、未针对智能体 | inferred、ignore | ignore |
 
-Cells for unaddressed messages are available only where the Source receives every message, such as a Feishu chat set to **全部消息** or a GitHub scope with its receive-all switch enabled. A CI result has no sender, so its row offers only the last cell. Bot messages use the bot list instead of these cells.
+"未针对智能体"的单元格只在来源接收全部消息时可用，例如设为 **全部消息** 的飞书群，或开启了全部接收开关的 GitHub 范围。CI 结果没有发送者，所以它的行只提供最后一个单元格。机器人消息使用机器人名单，而不是这些单元格。
 
-Setting the unlisted-addressed cell to explicit lets anyone in that scope request work by mentioning the agent. This can be useful for a dedicated support chat. Inferred candidates still depend on the accept mode. Follow-ups normally bypass this table, except that an explicit cell still grants explicit strength.
+把"不在名单上、针对智能体"设为明确，就允许该范围内的任何人在 @ 智能体时请求工作。这对专门的支持群很有用。推断候选仍然取决于接单模式。后续发言通常绕过这张表，但明确的单元格仍会赋予明确强度。
 
-The admission table is part of the Policy version. Weakening a cell does not immediately stop open Tickets accepted under it. It can revoke their Mandates when they are revalidated before resuming.
+准入表是策略版本的一部分。减弱某个单元格不会立刻停止在该单元格下接单的活动工单；当它们在恢复前重新校验时，可能会被撤销授权。
 
-### Bots and automated reviewers
+### 机器人与自动评审者
 
-The host recognizes GitHub Apps, logins ending in `[bot]`, and Feishu bots as bots. A Source can list bots such as `dependabot[bot]` whose messages may become inferred candidates. They must either address the agent or post in a scope that receives every message. They cannot make explicit requests or stop Tickets.
+宿主把 GitHub App、以 `[bot]` 结尾的登录名和飞书机器人识别为机器人。来源可以列出诸如 `dependabot[bot]` 的机器人，它们的消息可以成为推断候选。它们必须要么针对智能体，要么发在接收全部消息的范围内。它们不能发出明确请求，也不能停止工单。
 
-An automated reviewer using an ordinary account counts as a person to the host. Its comments reach subscribed Tickets and generate follow-up notices. Team prompt text must identify such accounts as automated reviewers.
+使用普通账号的自动评审者对宿主来说算作人。它的评论会到达已订阅的工单并产生后续通知。团队的提示词必须把这类账号标明为自动评审者。
 
-## Routing candidates
+## 候选的路由
 
-The main Session routes explicit candidates with `orchestrator_route`. One call can contain several accept, attach, stop or ignore decisions. Each item is processed independently: a refused item or a missing field does not prevent the others from running.
+主 Session 用 `orchestrator_route` 路由明确候选。一次调用可以包含多个接单、挂载、停止或忽略决定。每一项独立处理：某一项被拒绝或缺字段，不影响其余项执行。
 
-An inferred candidate normally needs a full assessment. There is one shortcut: if its card clearly touches no enabled rule, such as plain chat or unrelated discussion, the main Session may ignore it directly. The Decision records `ignoredFromCard` to distinguish this from a rule assessment. The main Session reads the enabled rules in its Policy prompt section.
+推断候选通常需要一次完整研判。有一个捷径：如果卡片明显不涉及任何已启用的规则，例如纯聊天或无关讨论，主 Session 可以直接忽略它。决定会记录 `ignoredFromCard`，以区别于基于规则的研判。主 Session 从策略提示词小节读取已启用的规则。
 
-Accepting an inferred candidate always requires an assessment. Direct accept refuses a Trigger that the gate did not admit as explicit.
+接单一个推断候选始终需要研判。直接接单会拒绝准入未判定为明确的触发。
 
-## Accept mode and rules
+## 接单模式与规则
 
-The accept mode is part of the Policy:
+接单模式是策略的一部分：
 
-| Mode | Effect |
+| 模式 | 作用 |
 | --- | --- |
-| `off` | Nothing inferred becomes a candidate, such as an unaddressed message, a bot's message or the follow-up of a person not on the list |
-| `observe` (default) | Inferred candidates are assessed; a positive assessment is recorded as ignore marked "would accept", and nothing is accepted |
-| `auto` | A positive assessment of an inferred candidate accepts it |
+| `off` | 任何推断都成不了候选，例如未针对智能体的消息、机器人的消息，或不在名单上的人的后续发言 |
+| `observe`（默认） | 对推断候选做研判；正面研判记为"本会接单"的忽略，不实际接单 |
+| `auto` | 对推断候选的正面研判会直接接单 |
 
-Explicit requests work in every mode. Start in `observe` and switch to `auto` after reviewing the recorded Decisions. Each assessment judges every enabled rule exactly once, whether it matches or not. A proactive accept requires at least one matching rule.
+明确请求在任何模式下都有效。从 `observe` 开始，看过记录下来的决定后再切到 `auto`。每次研判对每条已启用的规则恰好判断一次，无论是否命中。主动接单至少需要命中一条规则。
 
-Each rule describes a kind of proactive work. The Ticket's Mandate records the matched rules, and its Executor receives their names and instructions.
+每条规则描述一类主动工作。工单的授权记录命中的规则，它的执行器会收到这些规则的名称和说明。
 
-For that Ticket, a rule's process and communication requirements override the defaults. A silence rule can suppress an acknowledgement; a review rule can name the required reviewer and approval before merge. Requirements that apply to every Ticket belong in team prompt sections instead.
+对该工单而言，规则中关于流程和沟通的要求会覆盖默认值。静默规则可以抑制确认；评审规则可以指定合并前需要的评审人和批准。适用于所有工单的要求应放进团队提示词小节。
 
-## Policy version
+## 策略版本
 
-Rules, accept mode and each Source's Policy form the Policy version. Every Mandate records the version under which it was accepted.
+规则、接单模式和每个来源的策略共同构成策略版本。每个授权都记录它是在哪个版本下被接单的。
 
-A version change discards running Evals and queues their Triggers again. It also sends a policy-changed Input to each affected live Ticket. The Input explains whether:
+版本变化会作废正在运行的评估并重新排队它们的触发，同时给每个受影响的活动工单发送一条"策略已变更"的输入。该输入会说明：
 
-- a matched rule changed, including its new text, or no longer applies;
-- the requester may no longer start work; or
-- proactive work is no longer accepted, for example because the mode changed from `auto`.
+- 命中的规则是否变了（包括它的新文本），或不再适用；
+- 请求者是否已不能发起工作；或
+- 主动工作是否已不再被接单，例如模式从 `auto` 改成了别的。
 
-Unaffected Tickets receive no notice. The change does not immediately revoke live Tickets' Mandates.
+未受影响的工单不会收到通知。变更不会立刻撤销活动工单的授权。
 
-Source configuration is separate from Policy. It controls what enters the system: which chats are read and whether a scope receives all messages or only mentions. A Mandate records its Source and receiving scope. Resuming needs the Source to still listen to the Thread, but does not require it to still receive every message there.
+来源配置与策略分开。它控制系统里进来什么：读哪些群，某个范围接收全部消息还是只接收 @。授权记录它的来源和接收范围。恢复要求来源仍在监听该线程，但不要求它仍接收那里的全部消息。
 
-Replies wait while their Source is off. They are dropped if the Source no longer listens to their destination.
+来源关闭期间，回复会等待；如果来源已不再监听其目标，回复会被丢弃。
 
-A condition on what the Executor may do with its own result, such as when it may merge, does not decide who may authorize work. It is part of the agent's instructions, not of the Policy.
+关于执行器可以用自己的结果做什么的条件（例如何时可以合并），并不决定谁可以授权工作。它属于智能体的说明，不属于策略。
 
-## Resume and stop
+## 恢复与停止
 
-An ended Ticket keeps its Mandate. A person's message on one of its own Threads can resume the same work without a new Eval or Decision, regardless of who sent it. Bots and CI do not wake ended Tickets. The Executor decides whether the request fits the scope and ends the round if it does not.
+已结束的工单保留它的授权。人发在它自己某个线程上的消息，无需新的评估或决定就能让同一份工作恢复，无论发送者是谁。机器人和 CI 不会唤醒已结束的工单。执行器判断该请求是否符合范围，不符合就结束这一轮。
 
-Only three operations change a Mandate: accept creates it, a person's stop withdraws it, and failed revalidation revokes it. A Ticket stopped by a person stays ended and receives nothing more. Work requested there needs a new accept.
+只有三种操作会改变授权：接单创建它，人的停止撤回它，重新校验失败撤销它。被人停止的工单保持已结束，不再接收任何东西；在那里请求工作需要新的接单。
 
-### Revalidation before resume
+### 恢复前的重新校验
 
-The Source must still listen to the original Thread. The remaining checks depend on the Mandate's basis:
+来源必须仍在监听最初的线程。其余检查取决于授权的依据：
 
-- An explicit follow-up Mandate passes.
-- An inferred Mandate needs `auto` mode and its matched rules still enabled.
-- A Mandate admitted by a table cell must still receive at least its original strength under today's table and sender membership. Removing a sender from the list can therefore revoke a Mandate accepted through the listed-sender cell.
-- A bot's Mandate requires that bot to remain on the Source's bot list. Inferred table and bot Mandates also need `auto` mode and enabled matched rules.
-- Other Mandates require the sender to remain on the Source's allowed list.
+- 明确的后续授权通过。
+- 推断的授权需要 `auto` 模式，且其命中的规则仍然启用。
+- 通过表格单元格准入的授权，必须按今天的表格与发送者成员关系仍能获得至少原有的强度。因此把发送者移出名单，可能撤销通过"名单内发送者"单元格接单的授权。
+- 机器人的授权要求该机器人仍在来源的机器人名单上。推断的表格授权和机器人授权还需要 `auto` 模式以及已启用的命中规则。
+- 其他授权要求发送者仍在来源的允许名单上。
 
-If revalidation fails, the Ticket stays ended and takes none of its waiting messages. Each message is treated as having reached no Ticket; if no other Ticket owns it, it goes to Eval. The main Session is not told it reached a worker. This also applies after a processing pause. Attaching to the Ticket is refused, and further work requires a new accept.
+如果重新校验失败，工单保持已结束，不接收任何等待中的消息。每条消息都被当作没有到达任何工单；如果没有别的工单持有它，它就进入评估。主 Session 不会被告知它到达过某个执行器。暂停处理之后也适用同样的规则。挂载到该工单会被拒绝，继续工作需要新的接单。
 
-- **A person saying "stop" in a Thread is an ordinary Trigger,** and Eval decides stop. An Executor cannot declare that a person asked it to stop.
-- **Stop in the panel is a command.** It acts on the Ticket directly and is recorded as a manual stop.
-- **Waiting conditions belong to Sources.** A condition such as "no assignee for N hours" would be a Source that waits and checks again itself; Eval never waits.
+- **人在线程里说"停止"是一次普通触发，** 由评估决定是否停止。执行器不能声明有人要求它停止。
+- **面板上的停止是一条命令。** 它直接作用于工单，并记录为人工停止。
+- **需要等待的条件属于来源。** 例如"N 小时无人认领"这样的条件，会是一个自己等待并再次检查的来源；评估从不等待。
 
-## When Eval does not finish
+## 评估没有完成时
 
-The time limit starts when the candidate reaches the main Session. Time spent waiting for delivery does not count, and an undelivered candidate never expires.
+时限从候选到达主 Session 时开始计算。等待送达的时间不计入，未送达的候选也永不过期。
 
-An expired Eval queues its Triggers for another attempt. After two consecutive retries, the third expiry records `unavailable`. An assessment failure also records `unavailable`; a later Trigger can start a new Eval. A Policy change or a decision made against an outdated Policy records `unavailable` and immediately queues the batch under the current version.
+超时的评估会把它的触发重新排队以便再试一次。连续重试两次后，第三次超时记录 `unavailable`。研判失败同样记录 `unavailable`；之后的新触发可以开启一次新的评估。策略变更、或依据过期策略作出的决定，也会记录 `unavailable`，并立刻按当前版本重新排队该批次。
 
-The `evals` health entry reports unresolved unavailable Decisions from the last hour. `scripts/xenra-superagent status` includes that error.
+`evals` 健康项报告最近一小时内未解决的 `unavailable` 决定。`scripts/xenra-superagent status` 会把该错误包含在内。
 
-The panel asks for human attention only when the unavailable Decision is less than 24 hours old, is still the latest Decision on its Thread, has not been dismissed, and the Thread is neither queued nor evaluating. A person can evaluate the Trigger again or dismiss the problem.
+只有当未完成的决定不到 24 小时、仍是其线程上最新的决定、尚未被忽略，且该线程既未排队也不在评估中时，面板才会请求人工处理。人可以重新评估该触发，或忽略这个问题。

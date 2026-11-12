@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 部署与故障排查
+    url: https://github.com/RUO-MO/Xenra-SuperAgent/blob/main/docs/006-deployment.md
+    about: 安装、配置、升级和常见故障，请先读这篇文档。
+  - name: 安全漏洞
+    url: https://github.com/RUO-MO/Xenra-SuperAgent/blob/main/SECURITY.md
+    about: 安全问题请不要开公开 Issue，按 SECURITY.md 的说明私下报告。

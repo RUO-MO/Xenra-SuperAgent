@@ -1,4 +1,4 @@
-import { F as Thread, I as ThreadFact, R as ThreadRef, S as ChannelRef, U as Trigger, h as SourceScope, l as OutboundMessage, lt as Deployment, m as ScopeResult, t as ReceiveResult, v as AdmissionCell, z as Ticket } from "./intake-BntR4bhz.js";
+import { F as Thread, I as ThreadFact, R as ThreadRef, S as ChannelRef, U as Trigger, h as SourceScope, l as OutboundMessage, lt as Deployment, m as ScopeResult, t as ReceiveResult, v as AdmissionCell, z as Ticket } from "./intake-Ds8sHv3M.js";
 import { Context } from "@deepseek-ai/cordis";
 import { z } from "zod";
 import { DatabaseSync } from "node:sqlite";
@@ -501,8 +501,8 @@ declare class SourceRegistry implements SourceScope {
 //#region src/setup.d.ts
 type SetupPlace = 'deployment' | 'github' | 'feishu';
 declare const SETUP_PROBLEMS: {
-  readonly foreignFile: readonly ["deployment", "{file} was not written by dsh-superagent; move it, or choose another state directory."];
-  readonly gitTooOld: readonly ["deployment", "git does not read the github.com credential configuration dsh-superagent writes; dsh-superagent needs git 2.32 or later."];
+  readonly foreignFile: readonly ["deployment", "{file} was not written by xenra-superagent; move it, or choose another state directory."];
+  readonly gitTooOld: readonly ["deployment", "git does not read the github.com credential configuration xenra-superagent writes; xenra-superagent needs git 2.32 or later."];
   readonly environmentFailed: readonly ["deployment", "Preparing the agent environment failed."];
   readonly repositoryUnset: readonly ["github", "The GitHub Source names no repository."];
   readonly agentCliUnset: readonly ["github", "The agent GitHub CLI is not set."];
@@ -624,7 +624,7 @@ declare const GithubConfigSchema: z.ZodObject<{
 }, z.core.$strict>;
 type GithubConfig = z.infer<typeof GithubConfigSchema>;
 declare const githubKind: SourceKind<GithubConfig>;
-declare const name = "dsh-superagent-github";
+declare const name = "xenra-superagent-github";
 declare const inject: string[];
 declare function apply(ctx: Context): void;
 /** Returns an error health once `failures` consecutive polls fail, or undefined so a single network interruption stays quiet. */

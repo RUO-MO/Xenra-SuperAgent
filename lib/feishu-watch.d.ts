@@ -1,5 +1,5 @@
-import { F as Thread, U as Trigger } from "./intake-BntR4bhz.js";
-import { g as Tally, h as SourceRegistry, n as SourceContext, t as SourceKind } from "./kind-CC2z1Ko1.js";
+import { F as Thread, U as Trigger } from "./intake-Ds8sHv3M.js";
+import { g as Tally, h as SourceRegistry, n as SourceContext, t as SourceKind } from "./kind-B2kl6W4v.js";
 import { Context } from "@deepseek-ai/cordis";
 import { z } from "zod";
 //#region src/sources/feishu-read.d.ts
@@ -118,7 +118,7 @@ type FeishuConfig = z.infer<typeof FeishuConfigSchema>;
 declare const feishuKind: SourceKind<FeishuConfig>;
 /** Returns the Feishu Source's settings, falling back to schema defaults while the Feishu plugin is disabled. */
 declare const feishuSettings: (sources: SourceRegistry) => FeishuConfig;
-declare const name = "dsh-superagent-feishu";
+declare const name = "xenra-superagent-feishu";
 declare const inject: string[];
 declare function apply(ctx: Context): void;
 //#endregion

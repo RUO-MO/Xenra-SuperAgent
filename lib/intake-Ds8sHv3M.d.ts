@@ -3,7 +3,7 @@ import { z } from "zod";
 import s from "@deepseek-ai/schemastery";
 import "@deepseek-ai/dsh-subprocess";
 //#region src/deployment.d.ts
-/** Plugin configuration of the dsh-superagent entry. Volatile fields apply without a restart because dsh-superagent reads them on each use; changing `stateDir` remounts the plugin. */
+/** Plugin configuration of the xenra-superagent entry. Volatile fields apply without a restart because xenra-superagent reads them on each use; changing `stateDir` remounts the plugin. */
 declare const Config: s<Schemastery.ObjectS<NoInfer<{
   stateDir: s<string, string, "defined">;
   promptMaxChars: s<number, number, "volatile-defined">;
@@ -58,7 +58,7 @@ declare const REASONS: {
   readonly forwarded: "Forwarded to the worker of the Ticket already on this Thread";
   readonly senderNotMember: "The sender is not on the Source's list";
   readonly retried: "Retried by a person";
-  readonly hostRestarted: "dsh-superagent restarted";
+  readonly hostRestarted: "xenra-superagent restarted";
   readonly stopUnknown: "Stop target is unknown or already ended";
   readonly stopNotExplicit: "A stop needs an explicit request from a sender on the list";
   readonly directionUnsettled: "Implementation intent or target direction is not established, or a product/design decision is still required";

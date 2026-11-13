@@ -80,7 +80,7 @@ export const feishuKind: SourceKind<FeishuConfig> = {
     fields: [
       { key: 'allowed', type: 'rows', label: { zh: '能发起工作的飞书用户', en: 'Feishu users who may originate work' },
         columns: [{ key: 'id', type: 'text', label: { zh: 'open_id', en: 'open_id' }, pattern: 'ou_[a-zA-Z0-9]+',
-          placeholder: { zh: '例如：ou_7d8a6e6df7621556ce0d21922b676706', en: 'For example ou_7d8a6e6df7621556ce0d21922b676706' } }, { key: 'name', type: 'text', label: { zh: '名字', en: 'Name' }, optional: true,
+          placeholder: { zh: '例如：ou_1a2b3c4d5e6f7a8b', en: 'For example ou_1a2b3c4d5e6f7a8b' } }, { key: 'name', type: 'text', label: { zh: '名字', en: 'Name' }, optional: true,
           placeholder: { zh: '例如：张三', en: 'For example Alice' } }] },
       { key: 'syncChat', type: 'text', pattern: '(oc_[a-zA-Z0-9]+)?', label: { zh: '同步来源群', en: 'Sync chat' }, choose: { zh: '不同步', en: 'Do not sync' },
         hint: { zh: '同步时，名单变成这个群里的人：新成员加入，离开的人移除，名字取群里的名字。启动时和点同步时进行。', en: 'Syncing makes the list the people in this chat: new members join, people who left are removed, and names follow the chat. It runs at startup and on Sync.' } },

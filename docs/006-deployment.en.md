@@ -318,6 +318,14 @@ With a GitHub account on the allowed list, open an Issue, or post a comment cont
 
 With Feishu, mention the bot in a configured chat, or post in an allowed chat when it receives everything; direct messages work the same way.
 
+## Uninstall
+
+Choosing **Uninstall** in the Plugin Manager removes what this plugin wrote into `<stateDir>` as it stops: the shims in `worker-bin`, `worker-gitconfig`, and the database with its `-shm`/`-wal` companions. There is nothing to do in the panel first — after the uninstall the panel is gone.
+
+It deletes only files it wrote: anything in `<stateDir>` without this application's marker in its first two lines is kept, and the directory itself is kept when a person's own files remain. The decision comes from the plugin-management events DSH already emits — **DSH itself is not modified**: cleanup happens only when an explicit uninstall of this plugin is seen, no update is in progress, and the profile manifest really has stopped selecting it. Disabling, updating and restarting never trigger it; an unreadable manifest means no deletion, rather than a guess that could destroy a working installation.
+
+A restart or an upgrade does not clean up: the plugin is still selected in the profile then, so the database and its tickets stay.
+
 ## Upgrade
 
 1. Wait until no Executor is in the middle of a turn.

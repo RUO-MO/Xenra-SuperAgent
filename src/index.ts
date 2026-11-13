@@ -3,6 +3,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-settings'
 import { Runtime } from './app/runtime.ts'
 import { Config, machineOf, type DeploymentConfig } from './deployment.ts'
+import { removeState } from './infra/environment.ts'
+import { watchForRemoval } from './infra/profile.ts'
 
 export const name = 'xenra-superagent'
 export const inject = ['agents', 'sessionController', 'sessionPersistence', 'workspaceRegistry', 'permissionPresets', 'tools', 'systemPrompt', 'skills', 'webServer', 'llm', 'subprocess']
@@ -19,11 +21,25 @@ export async function apply(ctx: Context, config: DeploymentConfig): Promise<voi
     ctx.fiber.restart().then(() => { ctx.get('settings')?.describe() }).catch((error: unknown) => { ctx.logger.error('xenra-superagent restart failed: %s', String(error)) })
   }
   const runtime = new Runtime(ctx, machine, restart)
-  // Stopping releases the state directory lock but deliberately leaves the directory on disk: it holds the database of a
-  // working installation, and removing it on every restart would destroy it. Removing it is a separate, explicit act, and
-  // this is where it is offered — the panel's "remove this installation" action calls `removeState`, so uninstalling the
-  // plugin does not leave a `worker-gitconfig` behind for a machine to find later.
-  ctx.effect(() => async () => { await runtime.stop() })
+  // DSH emits its management operations while the plugin is still running. Watching them is the only way to tell a plain
+  // uninstall from a disable or an update, all of which stop the plugin; doing that wrong would delete a working
+  // installation's data. This subscribes to events DSH already emits — nothing in DSH is changed.
+  const isUninstall = watchForRemoval(ctx, 'xenra-superagent')
+  /**
+   * Stopping releases the state directory lock but leaves the directory on disk: it holds the database of a working
+   * installation, and a restart must not destroy it.
+   *
+   * On a real uninstall the watcher above confirms it, and the files this plugin wrote are removed so no stray
+   * `worker-gitconfig` is left for a later run of git to pick up. This is the only case where a person cannot clean up
+   * afterwards: the panel that would offer it disappears with the plugin.
+   */
+  ctx.effect(() => async () => {
+    await runtime.stop()
+    if (!isUninstall()) return
+    const { removed, kept } = await removeState(machine.stateDir).catch(() => ({ removed: [], kept: [] }))
+    ctx.logger.info('xenra-superagent was uninstalled; deleted %s, kept %s', removed.join(', ') || 'nothing',
+      kept.join(', ') || 'nothing')
+  })
   await runtime.ready
   ctx.logger.info(runtime.configured() ? 'xenra-superagent ready; the Xenra-SuperAgent sidebar entry opens the management panel' : `xenra-superagent is waiting for setup: ${runtime.setupProblem?.detail ?? ''}`)
 }

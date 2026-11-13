@@ -2,7 +2,7 @@
  * Deployment settings view shared between the panel Settings tab and the DSH Plugin Manager config page.
  * Edits host-level plugin configuration limits through DSH `ConfigForm` when writable.
  */
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ConfigPageForm } from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import { LIMITS } from '../limits.ts'
@@ -95,7 +95,6 @@ export function DeploymentPage({ setup, form, accounts: showAccounts }: { setup:
             placeholder={t('deploymentStateDirPlaceholder')}
             onChange={event => draft.edit({ ...draft.value, [STATE_DIR]: event.target.value })} />
         </Field>
-        <StateCleanup />
       </Section>
       <Section title={t('deploymentLimits')} hint={t('deploymentLimitsHint')}>
         {limit('promptMaxChars', t('deploymentPromptMaxChars'))}
@@ -114,43 +113,6 @@ function PluginPage({ form }: { form: DeploymentForm }) {
   return <div className="dt-embedded">
     {state ? <DeploymentPage setup={state.setup} form={form} accounts />
       : error ? <p className="dt-error" role="alert">{error.message}</p> : <p className="dt-hint">{t('loading')}</p>}
-  </div>
-}
-/**
- * Removes this installation's own files from its state directory.
- *
- * Uninstalling the plugin stops it and leaves the directory alone, which is right while it may be in use — but the leftovers
- * are real: a `worker-gitconfig` in a place a later git can still be pointed at is exactly what one installation left behind.
- * The action is deliberate and says what it will do first, then reports what went and what was kept because this plugin did
- * not write it.
- */
-function StateCleanup() {
-  const { t, call, notify } = usePanel()
-  const [confirming, setConfirming] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [kept, setKept] = useState<string[]>()
-  if (kept && kept.length > 0) return <div className="dt-field">
-    <p className="dt-hint">{t('stateCleanupKept')}</p>
-    <ul className="dt-list">{kept.map(path => <li key={path} className="dt-row"><div className="dt-row-main">
-      <div className="dt-row-title dt-mono">{path}</div></div></li>)}</ul>
-  </div>
-  if (!confirming) return <div className="dt-row-buttons">
-    <button type="button" className="dt-textlink" onClick={() => setConfirming(true)}>{t('stateCleanupOpen')}</button>
-  </div>
-  return <div className="dt-field">
-    <p className="dt-hint">{t('stateCleanupWarning')}</p>
-    <div className="dt-row-buttons">
-      <button type="button" className="dt-button dt-danger" disabled={busy} onClick={() => {
-        setBusy(true)
-        void call('DELETE state').then(result => {
-          notify(t('stateCleanupDone', { count: result.removed.length }))
-          setKept(result.kept)
-          setConfirming(false)
-        }).catch((error: unknown) => notify(error instanceof Error ? error.message : String(error)))
-          .finally(() => setBusy(false))
-      }}>{t('stateCleanupConfirm')}</button>
-      <button type="button" className="dt-textlink" onClick={() => setConfirming(false)}>{t('cancel')}</button>
-    </div>
   </div>
 }
 /** DSH Plugin Manager config view entry; renders nothing in `summary` mode because DSH displays the package description. */

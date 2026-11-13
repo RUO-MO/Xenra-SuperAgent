@@ -204,6 +204,7 @@ window.__ModuleLoader__.load({ id: "xenra-superagent", factory: (require) => { /
 | `src/infra/health.ts` | `HealthBoard` 与 `HealthEntry`：每个部件一条健康项，单写入者认领 |
 | `src/infra/paths.ts` | `packageRoot` 与 `packagePath`：从源码树或 `lib/` 找到包内文件 |
 | `src/infra/platform.ts` | `WINDOWS`、`pathKey`/`pathValue`/`pathEnv`、`shellCommand`、`spawnArgv`、`resolveExecutable`、`sameDirectory`：平台差异只在这一处回答 |
+| `src/infra/profile.ts` | `watchForRemoval`、`selectedBundles`、`installedDependency`：只读 DSH 已发出的插件管理事件与 profile 清单，把「卸载」与禁用、更新、重启区分开，决定停止时是否清理状态目录；不改 DSH 任何文件 |
 | `src/infra/text.ts` | `IM_WORDS`、`NOTE_WORDS`、`wordCount`、`checkedImText`、`fill`、`sameName`、`escapeRegExp` |
 | `src/sources/kind.ts` | `SourceKind` 协议：配置 schema、表单字段、策略部分、渠道、线程上下文、环境变量 |
 | `src/sources/registry.ts` | `SourceRegistry`：已注册种类、已保存实例、`SourceScope` 实现、渠道与上下文的转发 |
@@ -294,6 +295,7 @@ window.__ModuleLoader__.load({ id: "xenra-superagent", factory: (require) => { /
 | `tests/model-surface.spec.ts` | 模型读到的一切：工具、提示词、技能与输入，按 schema、术语表与体积上限核对 |
 | `tests/deployment.spec.ts` | 插件配置、`resolveDeployment`、`resolveFeishuBot` 与 setup 问题 |
 | `tests/environment.spec.ts` | 包装脚本、`worker-gitconfig`、外来文件与目录检查 |
+| `tests/profile.spec.ts` | 从 profile 清单区分卸载与重启：重启保留状态目录，卸载清理，读不到清单时不删 |
 | `tests/index.spec.ts` | 插件入口：`Config`、`machineOf` 与重启回调 |
 | `tests/service-script.spec.ts` | `scripts/xenra-superagent` 对着假的 `ps`、`tmux`、`dsh` 与假的健康端点 |
 | `tests/client.spec.tsx` | 客户端插件的注册、轮询与打开主 Session |

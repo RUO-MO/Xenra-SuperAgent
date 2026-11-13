@@ -13,7 +13,7 @@ import { SettingsConflict, type Settings } from './settings.ts'
 import { SetupError, type SetupProblem } from '../setup.ts'
 import { GIT_MINIMUM, atLeast, gitVersionOf, planUpgrade, upgrade } from './git-upgrade.ts'
 import { UserError, type EngineForPeople, type Ticket } from '../core/index.ts'
-import { removeState, runAsWorker } from '../infra/environment.ts'
+import { runAsWorker } from '../infra/environment.ts'
 import type { Deployment, Machine } from '../deployment.ts'
 import type { DshExecutor } from '../executor/dsh.ts'
 import type { Health } from '../sources/host.ts'
@@ -223,13 +223,6 @@ function routes(runtime: HttpHost): Routes {
       const version = await gitVersion(runtime)
       // A successful command still needs the recheck to pass, so the answer reports both facts separately.
       return { ...result, version, outdated: version === undefined || !atLeast(version, GIT_MINIMUM) }
-    },
-    // Removing this installation's own files. Uninstalling the plugin stops it but leaves `stateDir` alone, which is right for
-    // a working database — so the leftovers are cleared here, by an explicit action, and the answer says exactly what went and
-    // what was kept because xenra-superagent did not write it.
-    'DELETE state': async () => {
-      const { removed, kept } = await removeState(runtime.machine.stateDir)
-      return { removed, kept }
     },
     'PUT settings/:block': async ({ params, body }) => {
       const block = SettingsBlockSchema.parse(params.block)

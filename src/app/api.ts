@@ -40,7 +40,6 @@ export interface Api {
     plan?: { command: string; by: string } } }
   'POST git/upgrade': { response: { ok: boolean; output: string; version?: string; outdated: boolean } }
   // What an explicit removal took away and what it left, because it was not written by xenra-superagent.
-  'DELETE state': { response: { removed: string[]; kept: string[] } }
   'PUT settings/:block': { body: { value: unknown; revision: number }; response: { revision: number; restarting: boolean } }
   'GET policy/history': { response: HistoryView }
   'POST policy-sync/:id': { response: { policy: unknown } }

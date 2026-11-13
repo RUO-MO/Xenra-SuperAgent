@@ -204,6 +204,7 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `src/infra/health.ts` | `HealthBoard` and `HealthEntry`: one health entry per part, claimed by its single writer |
 | `src/infra/paths.ts` | `packageRoot` and `packagePath`: find a packaged file from the source tree or from `lib/` |
 | `src/infra/platform.ts` | `WINDOWS`, `pathKey`/`pathValue`/`pathEnv`, `shellCommand`, `spawnArgv`, `resolveExecutable` and `sameDirectory`: the one place a platform difference is answered |
+| `src/infra/profile.ts` | `watchForRemoval`, `selectedBundles` and `installedDependency`: read only the plugin-management events DSH already emits and the profile manifest, to tell an uninstall from a disable, an update or a restart, and so whether to clear the state directory on stop; no DSH file is changed |
 | `src/infra/text.ts` | `IM_WORDS`, `NOTE_WORDS`, `wordCount`, `checkedImText`, `fill`, `sameName` and `escapeRegExp` |
 | `src/sources/kind.ts` | The `SourceKind` protocol: configuration schema, form fields, Policy part, Channel, thread context, environment variables |
 | `src/sources/registry.ts` | `SourceRegistry`: the installed kinds, the stored instances, the `SourceScope` implementation, and the Channel and context forwarding |
@@ -294,6 +295,7 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `tests/model-surface.spec.ts` | Everything a model reads (tools, prompts, skills, inputs) against the schemas, the glossary and size budgets |
 | `tests/deployment.spec.ts` | Plugin configuration, `resolveDeployment`, `resolveFeishuBot` and setup problems |
 | `tests/environment.spec.ts` | The shims, `worker-gitconfig`, foreign files and directory checks |
+| `tests/profile.spec.ts` | Telling an uninstall from a restart through the profile manifest: a restart keeps the state directory, an uninstall clears it, an unreadable manifest deletes nothing |
 | `tests/index.spec.ts` | The plugin entry: `Config`, `machineOf` and the restart callback |
 | `tests/service-script.spec.ts` | `scripts/xenra-superagent` against fake `ps`, `tmux`, `dsh` and a fake health endpoint |
 | `tests/client.spec.tsx` | The client plugin's registration, its polling and opening the main Session |

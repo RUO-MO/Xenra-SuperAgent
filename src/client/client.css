@@ -122,6 +122,11 @@ div.dt-preview-head { color: var(--dsw-alias-label-secondary); }
 .dt-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 16px; min-width: 0; }
 .dt-card-head { display: flex; align-items: center; gap: 12px; min-height: 28px; }
 .dt-card-head .dt-row-main { flex: 1 1 0; min-width: 64px; }
+/* A Source card is its own status line: the dot, the state word and the per-part notes sit in the head, and the fields fold below them, so a Source's condition and the fields that change it are one block rather than two lists. */
+.dt-source-toggle { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; text-align: left; border-radius: 6px; }
+.dt-source-toggle:hover { color: var(--dsw-alias-label-primary); }
+.dt-source-toggle:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+.dt-source > .dt-fieldset > .dt-hint, .dt-source > .dt-fieldset > .dt-error { margin: 0; }
 .dt-card-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dt-row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
 .dt-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -273,7 +278,6 @@ div.dt-preview-head { color: var(--dsw-alias-label-secondary); }
 .dt-status-line .dt-status-text { margin-left: 0; }
 .dt-status-text[data-state='warning'] { color: var(--dsw-alias-state-warn-primary); }
 .dt-status-text[data-state='error'] { color: var(--dsw-alias-state-error-primary); }
-.dt-row-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .dt-lv { white-space: nowrap; }
 .dt-lv-label { color: var(--dsw-alias-label-caption); }
 .dt-lv-value { color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
@@ -358,6 +362,41 @@ a.dt-btn, a.dt-btn:hover { text-decoration: none; }
 }
 .dt-nav-group { margin: 10px 10px 2px; font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-secondary); }
 .dt-nav-group:first-child { margin-top: 0; }
+/* Home: one line of status, then what needs a person. The machinery folds into a details element so it stays out of the way. */
+.dt-home-status { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 12px; background: var(--dsw-alias-bg-module-platform); }
+.dt-home-status[data-state='warning'] { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 10%, var(--dsw-alias-bg-module-platform)); }
+.dt-home-status[data-state='ongoing'] { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, var(--dsw-alias-bg-module-platform)); }
+.dt-home-status[data-state='error'] { background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, var(--dsw-alias-bg-module-platform)); }
+.dt-home-more { border-top: 0.5px solid var(--dsw-alias-border-l3); padding-top: 12px; }
+.dt-home-more > summary { cursor: pointer; font-size: 13px; color: var(--dsw-alias-label-secondary); }
+.dt-home-more > summary:hover { color: var(--dsw-alias-label-primary); }
+.dt-home-more[open] > summary { margin-bottom: 10px; }
+.dt-advanced-links { display: flex; gap: 16px; margin-top: 10px; font-size: 13px; }
+/* The first-run guide: numbered steps, one open at a time. */
+.dt-wizard { display: flex; flex-direction: column; gap: 20px; max-width: 640px; }
+.dt-wizard-heading { margin: 0; font-size: 17px; line-height: 24px; font-weight: 600; }
+.dt-wizard-steps { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.dt-wizard-step { padding: 12px 16px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 12px; }
+.dt-wizard-step[data-done] { opacity: 0.55; }
+.dt-wizard-step[data-current] { border-color: var(--dsw-alias-brand-primary); background: var(--dsw-alias-bg-layer-1); }
+.dt-wizard-head { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.dt-wizard-number { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--dsw-alias-bg-module-platform); font-size: 12px; font-variant-numeric: tabular-nums; }
+.dt-wizard-step[data-current] .dt-wizard-number { background: var(--dsw-alias-brand-primary); color: var(--dsw-alias-label-primary-foreground); }
+.dt-wizard-step[data-current] > .dt-hint, .dt-wizard-step[data-current] > .dt-input, .dt-wizard-step[data-current] > .dt-kv-stack { margin-top: 10px; }
+.dt-wizard-field { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.dt-wizard-field > .dt-input { display: flex; width: 100%; }
+.dt-wizard-field > small { font-size: 12px; line-height: 18px; }
+.dt-wizard-step[data-current] > .dt-row-buttons { margin-top: 12px; }
+.dt-wizard-step[data-current] > .dt-input { display: flex; width: 100%; }
+.dt-wizard-skip { display: flex; gap: 16px; font-size: 13px; }
+/* A machine-level problem blocks every step below it, so it is drawn as part of the guide rather than a passing note. */
+.dt-wizard-blocker { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 12px; border: 0.5px solid var(--dsw-alias-state-error-primary); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 6%, transparent); }
+.dt-wizard-blocker .dt-error { margin: 0; }
+/* Git repair: the offer, then the command and its risk before anything runs. */
+.dt-git-repair { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 10px; border: 0.5px solid var(--dsw-alias-state-warn-primary); background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 6%, transparent); }
+.dt-git-repair .dt-error { margin: 0; }
+.dt-git-plan { display: flex; flex-direction: column; gap: 8px; }
+.dt-git-plan .dt-pre { max-height: 120px; }
 .dt-prompt-nav .dt-nav-item { flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; }
 .dt-nav-item > span { display: inline-flex; align-items: center; gap: 6px; }
 .dt-nav-item small { font-size: 12px; line-height: 18px; font-weight: 400; color: var(--dsw-alias-label-caption); }

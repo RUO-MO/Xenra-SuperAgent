@@ -1,12 +1,12 @@
 /** Plugin configuration and startup verification for repository access and agent CLI identities. */
-import { LIMITS } from './limits.ts'
-import { accessSync, constants, statSync } from 'node:fs'
-import { delimiter, isAbsolute, join } from 'node:path'
+import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { LIMITS } from './limits.ts'
 import type { Volatile } from '@deepseek-ai/cordis'
 import s from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import { resolveExecutable, pathEnv, pathValue } from './infra/platform.ts'
 import { runAsWorker, sameDirectory, withoutDirectory, workerBin } from './infra/environment.ts'
 import { SetupError } from './setup.ts'
 
@@ -14,7 +14,10 @@ const reason = (error: unknown): string => error instanceof Error ? error.messag
 const absolute = (description: string) => s.string().pattern(/^(?:\/|[A-Za-z]:[\\/])/).description(`${description} Absolute path (POSIX or a Windows drive path).`)
 /** Plugin configuration of the xenra-superagent entry. Volatile fields apply without a restart because xenra-superagent reads them on each use; changing `stateDir` remounts the plugin. */
 export const Config = s.object({
-  stateDir: absolute('Directory for the database, locks, worker shims, the agent\'s git configuration and, by default, the ticket directories.').default(join(homedir(), '.dsh', 'state', 'xenra-superagent')),
+  // Defaulted so a first install starts and can be configured from the panel: a required key would refuse to start the plugin,
+  // whose panel is where a person would set it. The default keeps the database beside the profile's own state.
+  stateDir: absolute('Directory for the database, locks, worker shims, the agent\'s git configuration and, by default, the ticket directories.')
+    .default(join(homedir(), '.dsh', 'state', 'xenra-superagent')),
   promptMaxChars: s.number().min(LIMITS.promptMaxChars.min).max(LIMITS.promptMaxChars.max).step(1).default(100000)
     .description('Largest saved prompt configuration, in characters.').volatile(),
   admissionContextMaxPages: s.number().min(LIMITS.admissionContextMaxPages.min).max(LIMITS.admissionContextMaxPages.max).step(1).default(10)
@@ -58,22 +61,23 @@ export interface Deployment extends Machine {
 }
 export interface FeishuBot { cli: string; appId: string; brand: 'feishu' | 'lark'; botId: string; name: string }
 
-/** Resolve a command name or absolute path to an executable file, ignoring the worker shim directory. */
+/**
+ * Resolve a command name or absolute path to an executable file, ignoring the worker shim directory.
+ * On Windows a bare name also tries the platform's executable extensions, so `gh` finds `gh.exe` or `gh.cmd`.
+ */
 export function executable(name: string, path: string, exclude?: string): string {
-  if (name.includes('/') && !isAbsolute(name)) throw new Error(`${name} must be a command name or an absolute path`)
-  const candidates = isAbsolute(name) ? [name] : path.split(delimiter).filter(dir => isAbsolute(dir) && !(exclude && sameDirectory(dir, exclude))).map(dir => join(dir, name))
-  for (const candidate of candidates) {
-    try { if (statSync(candidate).isFile()) { accessSync(candidate, constants.X_OK); return candidate } }
-    catch { /* Not an executable file here; try the next PATH directory. */ }
-  }
-  throw new Error(`${name} is not an executable file${isAbsolute(name) ? '' : ' on PATH'}`)
+  return resolveExecutable(name, path, exclude)
 }
 
 export type Probe = (argv: string[]) => Promise<string>
-/** Run startup checks through DSH's worker subprocess service with worker shims removed from PATH so a `gh` wrapper script reaches the real binary. */
+/**
+ * Run startup checks through DSH's worker subprocess service with worker shims removed from PATH so a `gh` wrapper script
+ * reaches the real binary. The environment is passed to the child rather than set through a helper program, which a Windows
+ * host has no guaranteed equivalent of: the subprocess service merges these entries onto its scrubbed base.
+ */
 export function workerProbe(subprocess: SubprocessRuntime, stateDir: string, cwd: string, signal: AbortSignal): Probe {
-  const path = withoutDirectory(process.env.PATH ?? '', workerBin(stateDir))
-  return argv => runAsWorker(subprocess, ['env', `PATH=${path}`, ...argv], cwd, AbortSignal.any([signal, AbortSignal.timeout(60_000)]))
+  const path = withoutDirectory(pathValue(), workerBin(stateDir))
+  return argv => runAsWorker(subprocess, argv, cwd, AbortSignal.any([signal, AbortSignal.timeout(60_000)]), pathEnv(path))
 }
 
 const GithubUser = z.object({ login: z.string().regex(/^[A-Za-z0-9-]+$/), id: z.number().int().positive() })
@@ -85,7 +89,7 @@ function parsed<T>(schema: z.ZodType<T>, text: string): T | undefined {
   return result.success ? result.data : undefined
 }
 /** Verify the agent's GitHub CLI identity and push access to the configured repository. */
-export async function resolveDeployment(machine: Machine, github: unknown, probe: Probe, path = process.env.PATH ?? ''): Promise<Deployment> {
+export async function resolveDeployment(machine: Machine, github: unknown, probe: Probe, path = pathValue()): Promise<Deployment> {
   const { stateDir } = machine
   const accounts = GithubAccountsSchema.parse(github ?? {})
   const remote = accounts.repository
@@ -112,13 +116,15 @@ const BotInfo = z.object({ bot: z.object({ open_id: z.string().regex(/^ou_[A-Za-
  * Verify that the configured Feishu CLI is authenticated as a bot and restricted to strict mode `bot`.
  * Workers invoke this CLI as `lark-cli`, so a CLI that also permits a user identity would let workers act as that user.
  */
-export async function resolveFeishuBot(machine: Machine, feishu: unknown, probe: Probe, path = process.env.PATH ?? ''): Promise<FeishuBot | undefined> {
+export async function resolveFeishuBot(machine: Machine, feishu: unknown, probe: Probe, path = pathValue()): Promise<FeishuBot | undefined> {
   const { cli: name } = FeishuBotSchema.parse(feishu ?? {})
   if (!name) return undefined
   const fail = (error: unknown): never => { throw error instanceof SetupError ? error : new SetupError('feishuCliFailed', { output: reason(error) }) }
   let cli = ''
   try { cli = executable(name, path, workerBin(machine.stateDir)) } catch (error) { fail(error) }
-  const run = (...args: string[]): Promise<string> => probe(['env', 'LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1', 'LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1', cli, ...args]).catch(fail)
+  // The CLI's own update and skills notices go to its stderr; the caller passes them in the child's environment, not as a
+  // prefix program, because a Windows host has no `env` helper.
+  const run = (...args: string[]): Promise<string> => probe([cli, ...args]).catch(fail)
   const text = await run('auth', 'status')
   const status = parsed(AuthStatus, text.slice(text.indexOf('{')))
   if (!status) return fail(new SetupError('feishuNoApp'))

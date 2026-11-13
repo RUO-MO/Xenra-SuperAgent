@@ -39,26 +39,33 @@ it('does not navigate after the panel unmounts or a newer request supersedes it'
   controller.abort(); state.phase = 'ready'; state.byId[id] = {}; pending.resolve()
   await expect(navigation).resolves.toBe(false); expect(open).not.toHaveBeenCalled()
 })
-it('reopens the page this tab showed last, and the overview for a route that no longer exists', () => {
-  remember({ route: { page: 'eval', query: { filter: 'stop' } }, stack: [{ page: 'overview' }] })
-  expect(initialLocation()).toEqual({ route: { page: 'eval', query: { filter: 'stop' } }, stack: [{ page: 'overview' }] })
-  // The Eval tab was previously named Policy; a route saved under the old name falls back to overview.
+it('reopens the page this tab showed last, and Home for a route that no longer exists', () => {
+  remember({ route: { page: 'evals', query: { filter: 'stop' } }, stack: [{ page: 'home' }] })
+  expect(initialLocation()).toEqual({ route: { page: 'evals', query: { filter: 'stop' } }, stack: [{ page: 'home' }] })
+  // A route saved under a name this panel no longer has falls back to Home.
   sessionStorage.setItem('xenra-superagent/route', JSON.stringify({ route: { page: 'policy' }, stack: [] }))
-  expect(initialLocation()).toEqual({ route: { page: 'overview' }, stack: [] })
-  sessionStorage.setItem('xenra-superagent/route', JSON.stringify({ route: { page: 'trigger', id: 'github:1' }, stack: [{ page: 'policy' }, { page: 'trigger' }] }))
-  expect(initialLocation().stack).toEqual([{ page: 'trigger' }])
+  expect(initialLocation()).toEqual({ route: { page: 'home' }, stack: [] })
+  // The six-tab panel's names still open the view they meant: Overview became Home, Execution became Tickets, and the
+  // Trigger tab became the Threads view.
+  sessionStorage.setItem('xenra-superagent/route', JSON.stringify({ route: { page: 'overview' }, stack: [] }))
+  expect(initialLocation().route).toEqual({ page: 'home' })
+  sessionStorage.setItem('xenra-superagent/route', JSON.stringify({ route: { page: 'trigger', id: 'github:1' },
+    stack: [{ page: 'policy' }, { page: 'trigger', query: {} }] }))
+  // An empty query carries nothing, so the stored route reads back without one.
+  expect(initialLocation()).toEqual({ route: { page: 'threads', id: 'github:1' }, stack: [{ page: 'threads', query: {} }],
+    group: undefined })
   sessionStorage.setItem('xenra-superagent/route', '{')
-  expect(initialLocation().route).toEqual({ page: 'overview' })
+  expect(initialLocation().route).toEqual({ page: 'home' })
 })
 it('reads each page a tab remembered with the parameters it takes, and leaves out what it does not know', () => {
-  expect(parseRoute({ page: 'trigger', query: { filter: 'nope', trigger: 'e1' } })).toEqual({ page: 'trigger' })
-  expect(parseRoute({ page: 'trigger', id: 'github:1', query: { trigger: 'e1', filter: 'recent' } }))
-    .toEqual({ page: 'trigger', id: 'github:1', query: { trigger: 'e1' } })
-  expect(parseRoute({ page: 'eval', query: { filter: 'stop', window: '7d' } })).toEqual({ page: 'eval', query: { filter: 'stop' } })
-  expect(parseRoute({ page: 'execution', id: 5, query: { filter: 'idle' } })).toEqual({ page: 'execution', query: { filter: 'idle' } })
+  expect(parseRoute({ page: 'threads', query: { filter: 'nope', trigger: 'e1' } })).toEqual({ page: 'threads', query: {} })
+  expect(parseRoute({ page: 'threads', id: 'github:1', query: { trigger: 'e1', filter: 'recent' } }))
+    .toEqual({ page: 'threads', id: 'github:1', query: { trigger: 'e1' } })
+  expect(parseRoute({ page: 'evals', query: { filter: 'stop', window: '7d' } })).toEqual({ page: 'evals', query: { filter: 'stop' } })
+  expect(parseRoute({ page: 'tickets', id: 5, query: { filter: 'idle' } })).toEqual({ page: 'tickets', query: { filter: 'idle' } })
   expect(parseRoute({ page: 'settings', query: { group: 'policy', source: 'feishu' } }))
     .toEqual({ page: 'settings', query: { group: 'source', source: 'feishu' } })
-  expect([parseRoute('overview'), parseRoute(null)]).toEqual([undefined, undefined])
+  expect([parseRoute('home'), parseRoute(null)]).toEqual([undefined, undefined])
 })
 it('opens the settings that fix each setup problem: the Deployment group, or the card of the Source it names', () => {
   expect(setupPage('deployment')).toEqual({ page: 'settings', query: { group: 'deployment' } })

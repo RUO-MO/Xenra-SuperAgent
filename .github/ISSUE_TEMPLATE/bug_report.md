@@ -1,16 +1,16 @@
 ---
 name: 缺陷报告
-about: 行为与文档或预期不符
+about: 报告 xenra-superagent 的可复现缺陷
 title: ''
-labels: ['type: bug', 'needs: reproduction']
+labels: bug
 assignees: ''
 ---
 
-## 问题
+## 现象
 
-<!-- 发生了什么，你预期发生什么。一两句话。 -->
+<!-- 发生了什么，你期望发生什么。 -->
 
-## 复现步骤
+## 复现
 
 1.
 2.
@@ -18,16 +18,22 @@ assignees: ''
 
 ## 环境
 
-- Xenra-SuperAgent 版本或提交：
-- DeepSeek Harness 版本（`dsh --version`）：
-- 操作系统与 Node.js 版本（`node -v`）：
-- 来源：GitHub / 飞书
-- 相关设置（`GET settings` 中相应块，**请删除密钥和令牌**）：
+- xenra-superagent 版本或提交：
+- DSH 版本（`dsh --version`）：
+- Node.js 版本（`node -v`）：
+- 操作系统与版本：
+- 触发来源：GitHub / 飞书 / 两者
 
-## 日志与截图
+## 证据
 
-<!-- 相关启动日志（.artifacts/xenra-superagent-*.log）、面板截图或 `scripts/xenra-superagent status` 的输出。 -->
+<!--
+贴上 `scripts/xenra-superagent status` 的输出、面板在错误处显示的那一行，或最新日志里相关的几行（.artifacts/ 下）。
+请先去掉令牌、app secret 与他人姓名之类的敏感内容。
+-->
 
-## 补充
+```
+```
 
-<!-- 可选：你尝试过的修复、相关 Issue。 -->
+## 已经排除的
+
+<!-- 例如按 docs/006-deployment.md 的故障排查表逐条查过。 -->

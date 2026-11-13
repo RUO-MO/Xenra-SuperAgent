@@ -12,7 +12,8 @@ type Headers = Record<string, string | undefined>
 /** Mount management HTTP routes on a fake web server and return a request helper that includes default panel headers. */
 function serve(runtime: Partial<Record<keyof HttpHost, unknown>>, host = '127.0.0.1') {
   let handler: Handler = async () => {}
-  const ctx = { webServer: { host, port: 3082, register: (route: { handler: Handler }) => { handler = route.handler; return () => {} } } }
+  const ctx = { webServer: { host, port: 3082, getOrigin: () => 'http://127.0.0.1:3082',
+    register: (route: { handler: Handler }) => { handler = route.handler; return () => {} } } }
   registerHttp(ctx as never, { ready: Promise.resolve(), ...runtime } as unknown as HttpHost)
   return async (method: string, path: string, body?: unknown, headers: Headers = {}) => {
     let status = 0, text = ''

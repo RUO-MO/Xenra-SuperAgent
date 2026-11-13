@@ -11,7 +11,9 @@ import { PromptConflict, SKILL_NAME, SKILL_PREFIX, TEAM_SECTIONS, builtInBase, b
 import { policyVersion } from '../policy.ts'
 import { SettingsConflict, type Settings } from './settings.ts'
 import { SetupError, type SetupProblem } from '../setup.ts'
+import { GIT_MINIMUM, atLeast, gitVersionOf, planUpgrade, upgrade } from './git-upgrade.ts'
 import { UserError, type EngineForPeople, type Ticket } from '../core/index.ts'
+import { removeState, runAsWorker } from '../infra/environment.ts'
 import type { Deployment, Machine } from '../deployment.ts'
 import type { DshExecutor } from '../executor/dsh.ts'
 import type { Health } from '../sources/host.ts'
@@ -53,6 +55,8 @@ export interface HttpHost {
   checkSetup(): void
   requestPass(): void
   models(): Promise<ModelCatalog>
+  /** DSH services and the plugin context, which the git report reads through the workers' own subprocess service. */
+  readonly context: Context
 }
 /**
  * Represents a client-facing 400 or 404 error raised during management route parsing or lookup.
@@ -148,6 +152,18 @@ const SourceBlock = z.templateLiteral(['source:', z.string().regex(/^[a-z][a-z0-
 const SettingsBlockSchema = z.union([z.enum(['policy', 'eval', 'executor']), SourceBlock])
 const SaveRequest = z.object({ value: z.unknown(), revision: z.number().int().nonnegative() })
 
+/**
+ * The git that worker sessions run, read through the same subprocess service the workers use so the answer describes the
+ * git they would get rather than the one this process might resolve. The shims are not on that PATH, which is right here:
+ * the shims wrap `gh` and `lark-cli`, never `git`.
+ */
+async function gitVersion(runtime: HttpHost): Promise<string | undefined> {
+  try {
+    const text = await runAsWorker(runtime.context.subprocess, ['git', '--version'], runtime.machine.stateDir,
+      AbortSignal.timeout(20_000))
+    return gitVersionOf(text)
+  } catch { return undefined }
+}
 function routes(runtime: HttpHost): Routes {
   const { store } = runtime
   const ticket = (id: string) => { if (!store.tickets.get(id)) throw new RouteError(404, 'Ticket not found'); return id }
@@ -193,6 +209,28 @@ function routes(runtime: HttpHost): Routes {
     'POST tickets/:id/retry': ({ params }) => { const id = ticket(params.id); runtime.engine.retryTicket(id); return { retried: true } },
     'POST tickets/:id/stop': ({ params }) => { const id = ticket(params.id); runtime.engine.stopTicket(id); return { stopped: true } },
     'POST executor/pause': async ({ body }) => runtime.settings.pause(z.object({ paused: z.boolean() }).parse(await body()).paused, 'panel'),
+    // The git that worker sessions run, and the upgrade this machine offers for it. The panel shows the command before a
+    // person confirms it; nothing here installs anything by itself.
+    'GET git': async () => {
+      const [version, plan] = await Promise.all([gitVersion(runtime), planUpgrade()])
+      return { version, outdated: version === undefined || !atLeast(version, GIT_MINIMUM), minimum: GIT_MINIMUM,
+        ...plan ? { plan } : {} }
+    },
+    'POST git/upgrade': async () => {
+      const plan = await planUpgrade()
+      if (!plan) throw new RouteError(400, 'No package manager on this machine can upgrade git')
+      const result = await upgrade(plan, AbortSignal.timeout(16 * 60_000))
+      const version = await gitVersion(runtime)
+      // A successful command still needs the recheck to pass, so the answer reports both facts separately.
+      return { ...result, version, outdated: version === undefined || !atLeast(version, GIT_MINIMUM) }
+    },
+    // Removing this installation's own files. Uninstalling the plugin stops it but leaves `stateDir` alone, which is right for
+    // a working database — so the leftovers are cleared here, by an explicit action, and the answer says exactly what went and
+    // what was kept because xenra-superagent did not write it.
+    'DELETE state': async () => {
+      const { removed, kept } = await removeState(runtime.machine.stateDir)
+      return { removed, kept }
+    },
     'PUT settings/:block': async ({ params, body }) => {
       const block = SettingsBlockSchema.parse(params.block)
       const known = !block.startsWith('source:') || runtime.sources.instances().some(instance => `source:${instance.id}` === block)
@@ -227,6 +265,16 @@ function match(table: Routes, method: string, segments: string[]) {
   }
   return undefined
 }
+/**
+ * The port the management API answers on: the listening port, or the one `getOrigin()` names for a listener this process did not
+ * bind itself. DSH reports `port` only after `listen` resolves, so the two are read together and a listener that is not bound yet
+ * yields `undefined`, which `sameOrigin` refuses.
+ */
+function listeningPort(server: { port?: number | undefined; getOrigin(): string }): number | undefined {
+  if (server.port !== undefined) return server.port
+  try { const port = Number(new URL(server.getOrigin()).port); return Number.isFinite(port) && port > 0 ? port : undefined }
+  catch { return undefined }
+}
 export function registerHttp(ctx: Context, runtime: HttpHost): () => void {
   if (ctx.webServer.host !== '127.0.0.1') throw new Error('Orchestrator management requires a loopback Web server')
   const table = routes(runtime)
@@ -234,7 +282,8 @@ export function registerHttp(ctx: Context, runtime: HttpHost): () => void {
     ctx.webServer.register({ kind: 'prefix', path: '/orchestrator', handler: async (req, res) => {
       const url = new URL(req.url ?? '/', 'http://localhost')
       if (!url.pathname.startsWith('/orchestrator/api/')) { res.writeHead(404); res.end(); return }
-      if (!sameOrigin(req, ctx.webServer.port)) { json(res, 403, { error: 'Same-origin management request required' }); return }
+      const port = listeningPort(ctx.webServer)
+      if (port === undefined || !sameOrigin(req, port)) { json(res, 403, { error: 'Same-origin management request required' }); return }
       try {
         await runtime.ready
         const route = match(table, req.method ?? 'GET', url.pathname.slice('/orchestrator/api/'.length).split('/'))

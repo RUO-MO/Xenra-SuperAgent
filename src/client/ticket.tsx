@@ -17,7 +17,7 @@ function InputLine({ input, earlier = [] }: { input: Input; earlier?: { id: stri
   return <li className="dt-row">
     <Dot state={input.delivered ? 'idle' : 'warning'} label={input.delivered ? t('inputDelivered') : t('inputUndelivered')} />
     <div className="dt-row-main">
-      {trigger ? <div className="dt-row-title"><button type="button" className="dt-open" onClick={() => navigate({ page: 'trigger',
+      {trigger ? <div className="dt-row-title"><button type="button" className="dt-open" onClick={() => navigate({ page: 'threads',
         id: trigger.thread, query: { trigger: trigger.id } })}>
         {actorName(t, trigger.actor)}{t('labelSeparator')}{readableMarkers(t, trigger.preview) || t('empty')}
       </button></div> : <div className="dt-row-title">{valueLabel(t, 'input', input.kind)}</div>}
@@ -80,7 +80,7 @@ function MandateDetails({ ticket, actor }: { ticket: TicketPageView; actor: stri
   const facts = ticket.basis.facts.filter(item => !(item.name === 'sender' && item.value === actor))
   const direction = decision?.direction
   const rows: [string, ReactNode][] = decision ? [
-    [t('term.trigger'), <button type="button" className="dt-trigger-link" onClick={() => navigate({ page: 'trigger', id: decision.thread,
+    [t('term.trigger'), <button type="button" className="dt-trigger-link" onClick={() => navigate({ page: 'threads', id: decision.thread,
       query: { trigger: decision.triggerIds[0] ?? '' } })}>
       <span className="dt-trigger-text">{readableMarkers(t, decision.preview) || t('empty')}</span>
       <span className="dt-row-meta"><span>{valueLabel(t, 'source', mandate.actor.source)} · {actor}</span><When at={decision.at} /></span>

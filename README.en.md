@@ -2,27 +2,23 @@
 
 [中文](README.md) · English
 
-> **Research prototype for reference only, not an official DeepSeek product.** This code grew out of our team's day-to-day development work, with much of the engineering done by coding agents. Treat it as research code, not production-ready software. It may still contain bugs, and its coding style and engineering practices may be inconsistent. Review and adapt it before using it in your own environment.
->
-> We have adapted it for publication, so it is not identical to our internal version or the implementation described in *Exploring Super-agent Design: Towards a More Autonomous Agent System*. Some designs discussed in the article are directions for future development and are not implemented in this prototype.
->
-> Xenra-SuperAgent is derived from the DeepSeek Harness `dsh-superagent` research prototype, which it was renamed from. The package, the bundle entries, the presets, the skills, the `scripts/xenra-superagent` script and the `XENRA_SUPERAGENT_*` environment variables use the new name; [Upgrading from dsh-superagent](docs/006-deployment.en.md#upgrading-from-dsh-superagent) covers an installation made under the old one.
+Xenra-SuperAgent is a proactive coding agent for one GitHub repository, packaged as a bundle for [DeepSeek Harness](https://www.deepseek.com/harness/). It listens to GitHub and, optionally, Feishu. When someone allowed asks the agent for work, it opens a work item, works on it in its own DSH Session and directory, and answers in the original conversation, for example with a pull request. The web panel has three tabs — Home, Tickets and Settings: Home leads with what needs a person, and a fresh installation opens the first-run guide instead.
 
-Xenra-SuperAgent is a proactive coding agent for one GitHub repository, packaged as a bundle for [DeepSeek Harness](https://www.deepseek.com/en/harness/). It listens to GitHub and, optionally, Feishu. When someone allowed asks the agent for work, it opens a work item, works on it in its own agent session and directory, and answers in the original conversation, for example with a pull request. A web panel shows what needs a person.
-
-It is also a way of working with an agent: **take as little human attention as possible, and give as much value as possible.** An agent that can act for a whole team can also waste a whole team's attention, so it acts only when asked or when a rule the team wrote allows it, and speaks only when someone must act or can use a result. [docs/000-philosophy.md](docs/000-philosophy.en.md) explains the principle and what it asks of the operator.
+It is also a way of working with an agent: **take as little human attention as possible, and give as much value as possible.** An agent that can act for a whole team can also waste a whole team's attention, so it acts only when asked or when a rule the team wrote allows it, and speaks only when someone must act or can use a result. [docs/000-philosophy.en.md](docs/000-philosophy.en.md) explains the principle and what it asks of the operator.
 
 ## Setup
 
 Setup has many steps, so an agent does it with you. Ask your coding agent:
 
-> Read SETUP.md in this repository and set up xenra-superagent with me.
+> Read SETUP.md in this repository and set up Xenra-SuperAgent with me.
 
-It asks one short question at a time, shows the full plan once, and then installs and configures everything. [SETUP.md](SETUP.en.md) is what it follows.
+It asks one short question at a time, shows the full plan once, and then installs and configures everything. [SETUP.en.md](SETUP.en.md) is what it follows.
+
+If you would rather do it yourself, [docs/006-deployment.en.md](docs/006-deployment.en.md) gives the complete install, machine configuration, start/stop and upgrade steps.
 
 ## Documentation
 
-Read the numbered documents in order; each builds only on the ones before it.
+Read the numbered documents in order; each builds only on the ones before it. Every document has a Chinese primary text and an English counterpart.
 
 - [000 Philosophy](docs/000-philosophy.en.md)
 - [001 Domain model](docs/001-domain.en.md)
@@ -36,9 +32,16 @@ Read the numbered documents in order; each builds only on the ones before it.
 
 ## Development
 
-`pnpm check` runs the typecheck, the tests and the build. Continuous integration runs the same checks on every push to `main` and on every pull request.
+Requires Node.js 22.19+ or 24+, and pnpm. Install the dependencies, then run:
 
-The build output in `lib/` is committed, so the repository installs as-is through a `link:` install without a build step first.
+```sh
+pnpm install
+pnpm check
+```
+
+`pnpm check` runs the typecheck, the tests and the build in that order. The build output in `lib/` is committed, so the repository installs as-is through a `link:` install without a build step first; after changing `src/`, run `pnpm build` again so the output matches the sources.
+
+The plugin itself runs on Linux, macOS and Windows: the shims, the prepare command, executable lookup and the git helper each take the form their platform expects. The start/stop script `scripts/xenra-superagent` needs tmux and `ps`, so it runs on POSIX hosts only; on Windows, start `dsh --profile <name>` directly. A few test cases need `#!/bin/sh`, `tmux` or `ps`, and are skipped on Windows with `it.skipIf`; the rest run as usual.
 
 ## Contributing
 
@@ -48,4 +51,8 @@ The build output in `lib/` is committed, so the repository installs as-is throug
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE), held by RUO-MO.
+
+## Acknowledgements
+
+The skeleton of this project comes from the DeepSeek team's open-source [dsh-superagent-prototype](https://github.com/deepseek-ai/dsh-superagent-prototype): it established this proactive agent's domain model, the separation of authorization from execution, and the design intent of consuming as little of a person's attention as possible. Xenra-SuperAgent rewrites that foundation as its own project with its own documentation, and follows the DeepSeek Harness 0.2.2 interfaces. Special thanks to the DeepSeek team for open-sourcing that work.

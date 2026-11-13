@@ -1,5 +1,5 @@
 /** Localization, reason formatting, message marker cleanup, and relative timestamp helpers. */
-import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
+import type { Translate } from '@deepseek-ai/dsh-client-locale/client'
 import type { XenraSuperagentKey } from './locales.ts'
 import type { Localized } from '../sources/kind.ts'
 import type { SetupProblem } from '../setup.ts'

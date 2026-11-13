@@ -35,6 +35,12 @@ export interface Api {
   'POST tickets/:id/retry': { response: { retried: true } }
   'POST tickets/:id/stop': { response: { stopped: true } }
   'POST executor/pause': { body: { paused: boolean }; response: { paused: boolean } }
+  /** The git worker sessions run, and the upgrade this machine offers; the panel shows the command before running it. */
+  'GET git': { response: { version?: string; outdated: boolean; minimum: string
+    plan?: { command: string; by: string } } }
+  'POST git/upgrade': { response: { ok: boolean; output: string; version?: string; outdated: boolean } }
+  // What an explicit removal took away and what it left, because it was not written by xenra-superagent.
+  'DELETE state': { response: { removed: string[]; kept: string[] } }
   'PUT settings/:block': { body: { value: unknown; revision: number }; response: { revision: number; restarting: boolean } }
   'GET policy/history': { response: HistoryView }
   'POST policy-sync/:id': { response: { policy: unknown } }

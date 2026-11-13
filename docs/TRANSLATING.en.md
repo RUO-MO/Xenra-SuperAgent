@@ -2,30 +2,50 @@
 
 [中文](TRANSLATING.md) · English
 
-This repository's documentation is written in Chinese first, with English as the counterpart. Both are real documentation: change one, change the other.
+This repository's documentation is written in Chinese first, with English as the counterpart. Both are real documentation: change one and you change the other. This document is for the contributor editing them; `tests/docs.spec.ts` enforces the rules.
 
 ## Which file is which
+
+A pair differs only by the `.en` segment:
 
 | Chinese (primary) | English (counterpart) |
 | --- | --- |
 | `README.md` | `README.en.md` |
 | `SETUP.md` | `SETUP.en.md` |
-| `docs/000-philosophy.md` | `docs/000-philosophy.en.md` |
+| `SECURITY.md` | `SECURITY.en.md` |
+| `docs/TRANSLATING.md` | `docs/TRANSLATING.en.md` |
 | Any other `docs/NNN-name.md` | `docs/NNN-name.en.md` |
 
-Each document names the other language on its first line, for example `[English](000-philosophy.en.md) · 中文`.
+The numbered documents under `docs/` run consecutively from `000` with no gaps. A new one takes the next number and adds a line to the document list in `README.md`; do not skip a number, and do not add the Chinese version alone.
 
-## Rules
+## The language switch at the top
 
-- **Translate the prose; leave the structure alone.** Headings, tables, code blocks, mermaid diagrams and the order and number of numbered sections must match between the two files. `tests/docs.spec.ts` checks numbered order, links and the module and test tables in 007 Architecture.
-- **A Chinese document links only to Chinese documents.** A relative link in `006-deployment.md` points at `001-domain.md`; in `006-deployment.en.md` it points at `001-domain.en.md`. The only cross-language link is the switch at the top.
-- **Code identifiers are never translated.** Package names, commands, environment variables, configuration keys and tool names (`xenra-superagent`, `XENRA_SUPERAGENT_DIR`, `orchestrator_route`, `stateDir`, `accept`) stay as they are, in backticks.
-- **Product and proper names are never translated.** Xenra-SuperAgent, DeepSeek Harness, GitHub, Feishu, Lark, Pull Request, Issue, tmux and git keep their names in both languages.
-- **Code, comments and prompts are not translated.** Everything in `src/`, `tests/`, `prompts/`, `skills/` and `lib/` stays in English. This policy covers documentation only.
+Every document names the counterpart within its first four lines. The Chinese version points at the English one with the label `English` and then `· 中文`; the English version points at the Chinese one with the label `中文` and then `· English`. The target is the same document in the other language, relative to the current file — [006 Deployment](006-deployment.en.md) opens with one. This is the one cross-language link a document may have.
+
+## Link rules
+
+- **Link only within one language.** A relative link in a Chinese document points at `001-domain.md`, and in an English document at `001-domain.en.md`. Apart from the switch at the top, any `.md` link that points at the other language is an error.
+- **A numbered document links only to lower-numbered numbered documents.** A `.md` link in `docs/00N-*.md` is either its own language counterpart or a `docs/` numbered document with a lower number. So `006` may link `001` through `005`, but not `007`, and not a repository-root document such as `README.md`; name those in prose instead of linking them.
+- **Links to files that are not `.md` are not restricted this way.** `../examples/profile.cordis.patch.yml`, as `docs/006-deployment.en.md` writes it, is the case.
+- **Every local link must resolve.** A relative path resolves against the current file's directory; do not write absolute paths or point outside the repository. A repository-root file is reached from `docs/` through `../`.
+- **Anchors are optional.** A link to a section may carry `#section-title`, but the title must match the target document exactly; renaming a heading means updating every anchor that names it.
+
+## What to translate
+
+- **Prose, headings, table cells, and the words around code blocks.** The English version should read as a document written in English, not as a word-for-word gloss.
+- **The shape of a table.** Row count, column count, column order and header meaning must match the Chinese version; a row's content may be rephrased for English word order, but no row may be added or lost.
+- **The number and order of code blocks and mermaid diagrams.** Node labels inside a diagram may be translated; node ids, edges and structure stay as they are.
+
+## What not to translate
+
+- **Code and commands.** Everything under `src/`, `tests/`, `prompts/`, `skills/`, `lib/` and `scripts/` stays in English, comments and prompts included. The same goes for code blocks inside `docs/`: commands, environment variables, YAML keys and shell fragments are kept verbatim.
+- **Identifiers.** Package names, plugin entry ids, preset ids, configuration keys, tool names, error codes, file names and paths are never translated, and they go in backticks, such as `xenra-superagent`, `stateDir`, `XENRA_SUPERAGENT_DIR`, `orchestrator_route` and `agent-preset/not-found`.
+- **Product and proper names.** Xenra-SuperAgent, DeepSeek Harness, GitHub, Feishu, Lark, Pull Request, Issue, tmux, git, pnpm, Node.js and SQLite keep their names in both languages.
+- **Copy the host provides.** A DeepSeek Harness menu or button is written as that host currently names it in its own language; do not invent a translation.
 
 ## Glossary
 
-The domain glossary in [001 Domain model](001-domain.en.md) is authoritative; both languages use the same terms and no others.
+The domain glossary in [001 Domain model](001-domain.en.md) is authoritative; both languages use those terms and no others.
 
 | English | 中文 |
 | --- | --- |
@@ -66,6 +86,17 @@ States and values:
 | pending / running / ended | 待启动 / 执行中 / 已结束 |
 | progress / waiting / ready / blocked / failed / dropped | 进展 / 等待 / 就绪 / 受阻 / 失败 / 无需处理 |
 
+The panel's copy is maintained separately in `src/client/locales.ts`, and its terms agree with this table. `tests/locales.spec.ts` checks that both languages name the same placeholders and that every error code and reason code is worded; when a document disagrees with it, the panel wins and the document changes.
+
 ## Tone
 
-Write Chinese the way technical documentation usually reads: short sentences, one idea per paragraph, sparing use of "we", no marketing language. Keep the English's judgments at the same strength — a sentence saying the software is not production-ready stays just as direct.
+Write Chinese the way technical documentation usually reads: short sentences, one idea per paragraph, sparing use of "we", no marketing language, no emoji. Use full-width punctuation. Keep the English's judgments at the same strength: a sentence saying the software is not production-ready stays just as direct.
+
+Write English in the present tense and the active voice, addressing the operator as "you", in short sentences. Keep the two sides equally certain: where the Chinese says something may happen, the English does not say "will".
+
+## The workflow
+
+1. Change the Chinese version first; it is the primary one.
+2. Write the English version with the same structure: the same heading levels, the same table rows and columns, and the same number of code blocks in the same order.
+3. For documentation-only changes, run at least `node node_modules/vitest/vitest.mjs run tests/docs.spec.ts tests/locales.spec.ts`; run the full `pnpm check` when code changed too.
+4. Put both files in one commit, whose message says what changed in which document.

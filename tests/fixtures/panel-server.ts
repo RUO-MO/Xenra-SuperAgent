@@ -107,6 +107,13 @@ export interface PanelServer {
   form?: ConfigForm<Record<string, unknown>> | undefined
   opened: string[]
   dropped: DroppedReply[]
+  /** The git the workers run, and the upgrade the machine offers; a test overrides this to describe a machine to repair. */
+  git: { version?: string; outdated: boolean; minimum: string; plan?: { command: string; by: string } }
+  /** Source kinds whose bundle row is off in `cordis.patch.yml`, so their cards report `installed: false`. */
+  uninstalled?: string[]
+  /** Replaces the answer of `POST git/upgrade`, for a test that needs a failure or a still-outdated result. */
+  gitUpgrade?: (answer: { ok: boolean; output: string; version?: string; outdated: boolean })
+    => { ok: boolean; output: string; version?: string; outdated: boolean }
   failing: Extract<Problem, { kind: 'outgoing' }>['outgoing'][]
 }
 export let server: PanelServer
@@ -134,7 +141,9 @@ function sourceSettings(): SourceView[] {
       health: server.health[`sync:${kind.kind}`] }
     const policy = kind.policy && { fields: kind.policy.fields, explicit: kind.policy.explicit, ...kind.policy.rows
       ? { rows: kind.policy.rows(config) } : {}, ...sync ? { sync } : {} }
-    return { id: kind.kind, kind: kind.kind, title: kind.title, description: kind.description, installed: true,
+    return { id: kind.kind, kind: kind.kind, title: kind.title, description: kind.description,
+      // A profile whose bundle leaves a Source's row off has no card for it; a test says so through `server.uninstalled`.
+      installed: !server.uninstalled?.includes(kind.kind),
       value: { enabled: server.settings.sources[kind.kind]?.enabled ?? true, config },
         revision: server.revisions[`source:${kind.kind}`] ?? 0,
       restarts: SETUP_FIELDS[kind.kind] ?? [], fields: kind.fields, facts: kind.facts?.(resolved()) ?? {},
@@ -248,6 +257,8 @@ function initial(): PanelServer {
   const defaults = { revision: 0, previousRevision: null, savedAt: '', source: 'defaults' }
   return {
     health: {}, down: false, pending: 0, opened: [], requests: [], misuse: [], queued: new Set(), dropped: [], failing: [],
+    // A working machine by default: a git new enough for the worker configuration, with an upgrade available.
+    git: { version: '2.43.0', outdated: false, minimum: '2.32', plan: { command: 'brew upgrade git', by: 'brew' } },
     setup: { machine: MACHINE, problem: null, feishuProblem: null,
       accounts: { repository: 'acme/widgets', agent: 'agent-bot', feishu: { appId: 'cli_bot', brand: 'feishu', botId: 'ou_bot',
         name: 'Widgets Bot' } } },
@@ -343,6 +354,15 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
     server.revisions.pause = (server.revisions.pause ?? 0) + 1
     return { paused: body.paused }
   } },
+  // The git the workers run, and the upgrade the panel may offer. A test sets `server.git` to describe a machine whose git
+  // is too old, or whose package manager is missing.
+  'GET git': { answer: () => server.git },
+  'POST git/upgrade': { answer: () => { const answer = { ok: true, output: 'upgraded', version: server.git.version,
+    outdated: server.git.outdated }
+    if (server.gitUpgrade) return server.gitUpgrade(answer)
+    return answer } },
+  // Removing the installation's own files: what went, and what stayed because xenra-superagent did not write it.
+  'DELETE state': { answer: () => ({ removed: ['worker-bin', 'worker-gitconfig'], kept: [] }) },
   'PUT settings/:block': { body: true, answer: ({ params: { block }, body }) => {
     const source = block.startsWith('source:') ? KINDS.find(kind => `source:${kind.kind}` === block) : undefined
     if (!['policy', 'eval', 'executor'].includes(block) && !source) return block.startsWith('source:') ? refuse(404, 'Source not found')
@@ -457,8 +477,7 @@ type Ops = Parameters<ConfigForm<Record<string, unknown>>['mutate']>[0]
 export function fakeForm(writable = true, accept = true) {
   const listeners = new Set<() => void>()
   let snapshot: ConfigFormSnapshot<Record<string, unknown>> = { status: 'ready', value: { ...MACHINE }, base: undefined, user: undefined,
-    revision: 1, writable,
-    mode: 'host' }
+    revision: 1, writable }
   const notify = () => { for (const listener of listeners) listener() }
   const mutations: { ops: Ops; revision: number | undefined }[] = []
   const form: ConfigForm<Record<string, unknown>> = {

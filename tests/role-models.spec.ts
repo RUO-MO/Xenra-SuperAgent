@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import { agentEvents, installModelSelection, type Agent, type ModelSelection, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import { agentEvents, type Agent, type ModelSelection } from '@deepseek-ai/dsh-agent'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { initializeRoleModel } from '../src/app/role-models.ts'
@@ -15,8 +15,9 @@ async function fixture() {
   ctx.reflect.provide('sessionPersistence', { flush })
   const session = Session.create(SessionId('role-model'))
   const agent = { ctx, session } as Agent
-  const host: ModelSelectionRef = { get current() { return session.requestHeader()?.config ?? { provider: 'host', model: 'default', reasoningEffort: ReasoningEffortId('high') } }, assembled: undefined }
-  installModelSelection(ctx, host)
+  const host = { get current(): ModelSelection { return session.requestHeader()?.config ?? { provider: 'host', model: 'default', reasoningEffort: ReasoningEffortId('high') } } }
+  // The innermost `agent/request` answer stands in for the host default DSH's own model selection provides inside an Agent.
+  ctx.on('agent/request', async () => host.current)
   const request = () => agentEvents(ctx, agent).waterfall('agent/request', { turn: 1, step: 1, signal: new AbortController().signal }, async () => ({ provider: 'seed', model: 'seed' }))
   const record = (selection: ModelSelection) => { const event = session.append('request/header', { header: { config: selection }, reason: 'initial' }); ctx.emit('session/event', session, event) }
   return { ctx, agent, host, resolve, flush, request, record }

@@ -60,6 +60,12 @@ declare module '@deepseek-ai/cordis' {
  */
 const WORK_TOOLS = ['read', 'write', 'edit', 'read_image', 'glob', 'grep', 'bash', 'pwsh', 'job_output', 'job_list', 'job_kill', 'web_search',
   'web_fetch', 'skill', 'todo_write', 'subagent', 'list_subagent_models', 'send_message', 'list_agents', 'interrupt_agent']
+/**
+ * The DSH tools the main Session reads and answers with. It routes and assesses triggers, so it needs the skill catalogue, a
+ * way to read files and the source text, and the job tools it would use to look at a running command; it changes nothing, so
+ * it gets no write or edit tool, no shell and no web tool. Each name the profile actually registers is kept (`mainOnly`).
+ */
+const MAIN_TOOLS = ['skill', 'read', 'read_image', 'job_output', 'job_list', 'job_kill']
 /** What the main Session is told when it would wait: what it waits for comes to it, and a waiting step holds back the next. */
 const NO_WAIT = 'Reports, follow_up notices, new candidates and a background job\'s end with its output arrive by themselves as messages; '
   + 'end the turn instead of waiting for them.'
@@ -260,7 +266,7 @@ export class Sessions {
     const register = this.registerTool(agent, binding)
     for (const tool of host.tools(agent, ticket)) register(tool.name, tool.description, tool.schema, tool.execute)
     if (master) {
-      binding.disposers.push(agent.ctx.tools.restrict({ allow: ['skill', 'bash', 'read', 'read_image', 'job_output', 'job_list', 'job_kill'] }),
+      binding.disposers.push(this.mainOnly(agent),
         agent.ctx.tools.guard(execution => noWait(execution, () => this.routed(agent))))
     } else {
       // An Executor Session keeps the profile's work tools it has, which DSH requires to be known; its own tools are not masked.
@@ -279,6 +285,17 @@ export class Sessions {
         : projections?.stateOf?.(agent.session, 'agentPreset')
       return (selected ?? agent.session.header.agentPreset) === ROUTER_PRESET
     } catch { return false }
+  }
+  /**
+   * The main Session's tools: the profile's work tools it may read, wait on and answer with, and none it would use to change
+   * anything. Read through the parent scope as `workOnly` does, and keep only those the profile actually registers, because
+   * DSH refuses a restriction that names an unknown tool: a profile whose shell is `pwsh` has no `bash`, and one without the
+   * job tools has none of them.
+   */
+  private mainOnly(agent: Agent): () => void {
+    const parent = scopeParentOf(agent)
+    const allow = MAIN_TOOLS.filter(name => agent.ctx.tools.get(name, parent))
+    return agent.ctx.tools.restrict({ allow })
   }
   /**
    * An Executor Session's tools: only the profile's work tools, which DSH requires to be known, and none once its ticket

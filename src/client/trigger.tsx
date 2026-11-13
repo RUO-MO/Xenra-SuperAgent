@@ -11,7 +11,7 @@ export function TriggerStatus({ filter }: { filter: ThreadFilter }) {
   const { t, call, navigate } = usePanel()
   const [limit, setLimit] = useState(20)
   const { data, error } = usePoll(() => call('GET threads', { query: { filter, limit } }), [filter, limit])
-  const go = (next: ThreadFilter) => { setLimit(20); navigate({ page: 'trigger', query: next !== 'subscribed' ? { filter: next } : {} },
+  const go = (next: ThreadFilter) => { setLimit(20); navigate({ page: 'threads', query: next !== 'subscribed' ? { filter: next } : {} },
     true) }
   return <>
     <StatusHead hint={t('triggerIntro')} />

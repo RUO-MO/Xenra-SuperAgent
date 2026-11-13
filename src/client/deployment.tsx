@@ -2,13 +2,14 @@
  * Deployment settings view shared between the panel Settings tab and the DSH Plugin Manager config page.
  * Edits host-level plugin configuration limits through DSH `ConfigForm` when writable.
  */
-import { useCallback, useMemo, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ConfigPageForm } from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import { LIMITS } from '../limits.ts'
 import type { SetupView } from './api.ts'
-import { InfoTip, Input } from './controls.tsx'
+import { Input } from './controls.tsx'
 import { SaveBar, useDraft } from './draft.tsx'
+import { GitRepair } from './git-repair.tsx'
 import { PanelProvider, usePanel, usePanelData } from './provider.tsx'
 import { Field, Fields } from './settings-kit.tsx'
 import { setupText, type T } from './text.ts'
@@ -18,10 +19,17 @@ export type DeploymentForm = ConfigPageForm | undefined
 type Op = Parameters<ConfigPageForm['mutate']>[0][number]
 
 const MACHINE_LIMITS = ['promptMaxChars', 'admissionContextMaxPages', 'admissionContextTimeoutMs'] as const
-type Limits = Record<typeof MACHINE_LIMITS[number], string>
+/** The one editable path: the state directory decides where the database, locks and shims live. */
+const STATE_DIR = 'stateDir'
+/** Every editable machine key, the directory first. */
+const MACHINE_FIELDS = ['stateDir', ...MACHINE_LIMITS] as const
+type MachineKey = typeof MACHINE_FIELDS[number]
+type Limits = Record<MachineKey, string>
 const text = (value: unknown): string => typeof value === 'string' || typeof value === 'number' ? String(value) : ''
 const limitsOf = (values: object | undefined): Limits =>
-  Object.fromEntries(MACHINE_LIMITS.map(key => [key, text((values as Record<string, unknown> | undefined)?.[key])])) as Limits
+  Object.fromEntries(MACHINE_FIELDS.map(key => [key, text((values as Record<string, unknown> | undefined)?.[key])])) as Limits
+/** An absolute POSIX path or a Windows drive path, the form the Host accepts for `stateDir`. */
+const absolutePath = (value: string): boolean => /^(?:\/|[A-Za-z]:[\\/])/.test(value)
 
 export function usePageForm(form: ConfigForm<Record<string, unknown>> | undefined): DeploymentForm {
   const subscribe = useCallback((listener: () => void) => form ? form.subscribe(listener) : () => {}, [form])
@@ -38,15 +46,27 @@ export function DeploymentPage({ setup, form, accounts: showAccounts }: { setup:
   const draft = useDraft({ saved: limitsOf(editable ? snapshot.value : setup.machine), revision: editable ? snapshot.revision : undefined,
     reload: async () => {},
     save: async (value, revision, base) => {
-      const ops: Op[] = MACHINE_LIMITS.filter(key => value[key].trim() !== base[key].trim())
-        .map(key => value[key].trim() ? { op: 'set', path: [key], value: Number(value[key]) } : { op: 'unset', path: [key] })
+      // The state directory is a path, so a value that is not absolute is refused before it reaches the Host.
+      const directory = value[STATE_DIR].trim()
+      if (directory && !absolutePath(directory)) throw new Error(t('deploymentStateDirInvalid'))
+      // A limit is a number the Host parses; the state directory is the path itself, and an emptied one drops back to the
+      // Host's default rather than to an empty string.
+      const ops: Op[] = []
+      for (const key of MACHINE_FIELDS) {
+        const next = value[key].trim(), previous = (base[key] ?? '').trim()
+        if (next === previous) continue
+        if (!next) { ops.push({ op: 'unset', path: [key] }); continue }
+        ops.push(key === STATE_DIR ? { op: 'set', path: [key], value: next } : { op: 'set', path: [key], value: Number(next) })
+      }
       if (!form || !await form.mutate(ops, revision)) throw new Error(t('deploymentRefused'))
-      notify(t('saved'))
-      return { revision: revision + 1, restarting: false }
+      // A new state directory remounts the plugin, so the page will stop being served for a moment; say so instead of
+      // letting the reader take the reconnecting panel for a failure.
+      notify(directory && directory !== (base[STATE_DIR] ?? '').trim() ? t('deploymentStateDirRestart') : t('saved'))
+      return { revision: revision + 1, restarting: directory !== (base[STATE_DIR] ?? '').trim() }
     } })
   const accounts = setup.accounts
-  // Remote browsers (`memory` mode) are read-only; `unavailable` indicates `xenra-superagent` is still starting.
-  const readOnlyHint = !form ? t('deploymentNoForms') : snapshot?.mode === 'memory' ? t('deploymentReadOnly')
+  // `unavailable` indicates `xenra-superagent` is still starting or the namespace is not served to this client.
+  const readOnlyHint = !form ? t('deploymentNoForms')
     : snapshot?.status === 'loading' ? t('loading') : snapshot?.status === 'unavailable' ? t('deploymentUnavailable')
     : !editable ? t('deploymentReadOnly') : undefined
   const limit = (key: typeof MACHINE_LIMITS[number], label: string) => <Field label={label}>
@@ -68,10 +88,14 @@ export function DeploymentPage({ setup, form, accounts: showAccounts }: { setup:
       </Section>}
       <Section title={t('deploymentMachine')}>
         {readOnlyHint && <Hint>{readOnlyHint}</Hint>}
-        <div className="dt-field">
-          <span className="dt-field-head">{t('deploymentStateDir')}<InfoTip text={t('deploymentStateDirHint')} /></span>
-          <span className="dt-mono">{setup.machine.stateDir}</span>
-        </div>
+        {/* The git the workers run, with the repair this machine offers, sits with the other machine-level facts. */}
+        <GitRepair />
+        <Field label={t('deploymentStateDir')} hint={t('deploymentStateDirHint')}>
+          <Input type="text" value={draft.value[STATE_DIR]} disabled={!editable} spellCheck={false}
+            placeholder={t('deploymentStateDirPlaceholder')}
+            onChange={event => draft.edit({ ...draft.value, [STATE_DIR]: event.target.value })} />
+        </Field>
+        <StateCleanup />
       </Section>
       <Section title={t('deploymentLimits')} hint={t('deploymentLimitsHint')}>
         {limit('promptMaxChars', t('deploymentPromptMaxChars'))}
@@ -90,6 +114,43 @@ function PluginPage({ form }: { form: DeploymentForm }) {
   return <div className="dt-embedded">
     {state ? <DeploymentPage setup={state.setup} form={form} accounts />
       : error ? <p className="dt-error" role="alert">{error.message}</p> : <p className="dt-hint">{t('loading')}</p>}
+  </div>
+}
+/**
+ * Removes this installation's own files from its state directory.
+ *
+ * Uninstalling the plugin stops it and leaves the directory alone, which is right while it may be in use — but the leftovers
+ * are real: a `worker-gitconfig` in a place a later git can still be pointed at is exactly what one installation left behind.
+ * The action is deliberate and says what it will do first, then reports what went and what was kept because this plugin did
+ * not write it.
+ */
+function StateCleanup() {
+  const { t, call, notify } = usePanel()
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [kept, setKept] = useState<string[]>()
+  if (kept && kept.length > 0) return <div className="dt-field">
+    <p className="dt-hint">{t('stateCleanupKept')}</p>
+    <ul className="dt-list">{kept.map(path => <li key={path} className="dt-row"><div className="dt-row-main">
+      <div className="dt-row-title dt-mono">{path}</div></div></li>)}</ul>
+  </div>
+  if (!confirming) return <div className="dt-row-buttons">
+    <button type="button" className="dt-textlink" onClick={() => setConfirming(true)}>{t('stateCleanupOpen')}</button>
+  </div>
+  return <div className="dt-field">
+    <p className="dt-hint">{t('stateCleanupWarning')}</p>
+    <div className="dt-row-buttons">
+      <button type="button" className="dt-button dt-danger" disabled={busy} onClick={() => {
+        setBusy(true)
+        void call('DELETE state').then(result => {
+          notify(t('stateCleanupDone', { count: result.removed.length }))
+          setKept(result.kept)
+          setConfirming(false)
+        }).catch((error: unknown) => notify(error instanceof Error ? error.message : String(error)))
+          .finally(() => setBusy(false))
+      }}>{t('stateCleanupConfirm')}</button>
+      <button type="button" className="dt-textlink" onClick={() => setConfirming(false)}>{t('cancel')}</button>
+    </div>
   </div>
 }
 /** DSH Plugin Manager config view entry; renders nothing in `summary` mode because DSH displays the package description. */

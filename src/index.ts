@@ -19,6 +19,10 @@ export async function apply(ctx: Context, config: DeploymentConfig): Promise<voi
     ctx.fiber.restart().then(() => { ctx.get('settings')?.describe() }).catch((error: unknown) => { ctx.logger.error('xenra-superagent restart failed: %s', String(error)) })
   }
   const runtime = new Runtime(ctx, machine, restart)
+  // Stopping releases the state directory lock but deliberately leaves the directory on disk: it holds the database of a
+  // working installation, and removing it on every restart would destroy it. Removing it is a separate, explicit act, and
+  // this is where it is offered — the panel's "remove this installation" action calls `removeState`, so uninstalling the
+  // plugin does not leave a `worker-gitconfig` behind for a machine to find later.
   ctx.effect(() => async () => { await runtime.stop() })
   await runtime.ready
   ctx.logger.info(runtime.configured() ? 'xenra-superagent ready; the Xenra-SuperAgent sidebar entry opens the management panel' : `xenra-superagent is waiting for setup: ${runtime.setupProblem?.detail ?? ''}`)

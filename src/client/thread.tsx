@@ -46,7 +46,7 @@ function TriggerItem({ trigger, earlier, target, subscribed, requeue }: {
     <div className="dt-event-foot">
       {triggerTags(t, trigger, subscribed)}
       {ticketId && !subscribed.has(ticketId) && <button type="button" className="dt-textlink dt-icon-link"
-        onClick={() => navigate({ page: 'execution', id: ticketId })}>{t('openTicket')}</button>}
+        onClick={() => navigate({ page: 'tickets', id: ticketId })}>{t('openTicket')}</button>}
       {requeue && <button type="button" className="dt-textlink dt-icon-link dt-reveal" disabled={requeue.busy} aria-busy={requeue.busy}
         onClick={requeue.run}>
         <Icon name="refresh" size={13} />{t('requeue')}
@@ -149,7 +149,7 @@ export function ThreadPage({ id, target }: { id: string; target?: string }) {
     </DisclosureRow>}
     {data.correlated.length > 0 && <Section title={t('term.correlation')}>
       <ul className="dt-plain-list">{data.correlated.map(item => <li key={item.key}>
-        <button type="button" className="dt-textlink" onClick={() => navigate({ page: 'trigger', id: item.key })}>{readableMarkers(t,
+        <button type="button" className="dt-textlink" onClick={() => navigate({ page: 'threads', id: item.key })}>{readableMarkers(t,
           item.title)}</button>
       </li>)}</ul>
     </Section>}

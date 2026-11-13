@@ -1,44 +1,78 @@
 // @vitest-environment jsdom
-// The Source status and settings.
+// The Source settings group: one card per Source, with the card's own head carrying its health and its fields below.
 import { act } from 'react'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { zh } from '../src/client/locales.ts'
 import { usePanel, mount, remount, settle, all, find, tab, click, type, text, field, at } from './fixtures/panel.tsx'
 import { server, problemOf, droppedReply } from './fixtures/panel-server.ts'
 
+/** A Source's card by its title, from the group's cards. */
+const card = (name: string) => all('.dt-card').find(element =>
+  element.querySelector('.dt-source-toggle')?.textContent?.trim() === name)!
+/**
+ * Open a Source's card. Every card starts open, so this is only needed after a case folds one; clicking an already open
+ * card would close it, hence the `aria-expanded` check.
+ */
+const open = async (name: string) => {
+  const toggle = card(name).querySelector<HTMLButtonElement>('.dt-source-toggle')!
+  if (toggle.getAttribute('aria-expanded') !== 'true') await click(toggle)
+  return card(name)
+}
 usePanel()
-it('shows each Source\'s state on the Source status and opens its settings from a setup problem', async () => {
+it('links a paused part that waits on a card field to that card, and leaves one that waits on something else alone', async () => {
+  // The Feishu Source is on with no bot CLI, which is exactly the state its card field fixes.
+  server.health = { feishu: { state: 'paused', detail: 'The Source is on, and its bot lark-cli is not set', code: 'feishuCliUnset' },
+    history: { state: 'paused', detail: 'Waiting for the Feishu bot', code: 'feishuBotMissing' } }
   await mount()
-  await click(zh['tab.source'])
-  expect(document.querySelector('.dt-status-title')?.textContent).toBe(zh.statusTitle)
-  expect(all('.dt-form > .dt-list > .dt-row .dt-row-name').map(title => title.textContent)).toEqual(['飞书', 'GitHub'])
-  expect(all('.dt-form > .dt-list > .dt-row')[0]!.querySelector('.dt-row-meta')?.textContent).toBe('24 小时到达 12被过滤 2最近 ' + document.querySelector('.dt-row-meta time, .dt-row-meta .dt-lv:last-child .dt-lv-value')?.textContent)
-  expect(text()).toContain(zh['sourceState.error'])
-  expect(text()).toContain('socket closed')
-  expect(all('.dt-card')).toHaveLength(0)
+  await click(tab(zh['tab.settings']))
+  // The note sits in the Feishu card's head, which is the block its field belongs to.
+  const feishu = () => card('飞书')
+  expect(feishu().textContent).toContain(zh['healthCode.feishuCliUnset'])
+  // Each blocking note offers the way to unblock it, rather than only naming what is missing.
+  const links = () => [...feishu().querySelectorAll('button')].filter(button => button.textContent === zh.sourceOpenSettings)
+  expect(links().length).toBeGreaterThan(0)
+  await click(links()[0]!)
+  expect(document.querySelector('#dt-source-feishu')).not.toBeNull()
+  // The link opens the card it points into, so the field that unblocks the note is on screen.
+  expect(card('飞书').querySelector('.dt-source-toggle')?.getAttribute('aria-expanded')).toBe('true')
+  // A part that waits on something outside this page carries no such link.
+  server.health = { feishu: { state: 'paused', detail: 'Waiting for setup', code: 'setupPending' },
+    history: { state: 'paused', detail: 'Waiting for setup', code: 'setupPending' } }
+  await remount()
+  await click(tab(zh['tab.settings']))
+  expect(card('飞书').textContent).toContain(zh['healthCode.setupPending'])
+  expect([...card('飞书').querySelectorAll('button')].filter(button => button.textContent === zh.sourceOpenSettings)).toEqual([])
+})
+
+it('shows each Source\'s state in its own card, and opens that card from a setup problem', async () => {
+  await mount()
+  await click(tab(zh['tab.settings']))
+  // Status and configuration for one Source sit together: its state word and stats are in the card's head.
+  expect(all('.dt-source .dt-status-text').map(state => state.textContent)).toEqual(['出错', '运行中'])
+  const feishu = card('飞书')
+  expect(feishu.querySelector('.dt-row-meta')?.textContent).toContain('24 小时到达 12被过滤 2')
+  expect(feishu.textContent).toContain('socket closed')
+  expect(all('.dt-card')).toHaveLength(2)
   server.setup = { ...server.setup, problem: problemOf('agentCliUnset') }
   await remount()
-  await click(zh['tab.source'])
-  await click(zh.sourceOpenSettings)
-  expect(tab(zh['tab.settings']).getAttribute('aria-selected')).toBe('true')
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['term.source'])
-  expect(all('.dt-card')[1]!.textContent).toContain('部署检查未通过：没有设置智能体的 GitHub CLI。')
+  await click(tab(zh['tab.settings']))
+  // The problem is already inside the card that fixes it, so there is no separate link to follow.
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.source'])
+  expect(card('GitHub').textContent).toContain('部署检查未通过：没有设置智能体的 GitHub CLI。')
 })
 
 it('folds more than six chats into a line of their names', async () => {
   const chats = Array.from({ length: 7 }, (_, n) => ({ chatId: n ? `oc_c${n}` : 'oc_team', listen: 'all' as const }))
   server.settings.sources.feishu = { ...server.settings.sources.feishu!, config: { ...server.settings.sources.feishu!.config, chats } }
   await mount()
-  await click(zh['tab.source'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(tab(zh['tab.settings']))
   const summary = all('.dt-card')[0]!.querySelector('.dt-rows-summary')!
   expect(summary.textContent).toBe(['团队群', 'oc_c1', 'oc_c2', 'oc_c3', 'oc_c4', 'oc_c5', 'oc_c6'].join('、'))
 })
 
 it('rereads the chats the bot has joined on request and says which are new, keeping unsaved edits', async () => {
   await mount()
-  await click(zh['tab.source'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(tab(zh['tab.settings']))
   const feishu = () => all('.dt-card')[0]!
   const button = () => [...feishu().querySelectorAll('button')].find(item => item.textContent === '刷新群列表')!
   await click([...feishu().querySelectorAll('button')].find(item => item.textContent === '添加')!)
@@ -61,8 +95,7 @@ it('rereads the chats the bot has joined on request and says which are new, keep
 
 it('renders each Source\'s settings from its kind\'s fields and saves one Source against its own revision', async () => {
   await mount()
-  await click(zh['tab.source'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(tab(zh['tab.settings']))
   const cards = all('.dt-card')
   expect(cards.map(card => card.querySelector('.dt-row-title')?.firstChild?.textContent)).toEqual(['飞书', 'GitHub'])
   const feishu = cards[0]!
@@ -91,6 +124,29 @@ it('renders each Source\'s settings from its kind\'s fields and saves one Source
   await act(async () => { github.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) }); await settle()
   expect(server.settings.sources.github).toMatchObject({ enabled: false })
   expect(server.revisions['source:github']).toBe(6)
+})
+
+it('fills every empty input of a Source with an example of what belongs there', async () => {
+  await mount()
+  await click(tab(zh['tab.settings']))
+  // A field with a value shows it; the example stays in the markup for a cleared field, and says what a value looks like
+  // rather than repeating the label.
+  const github = all('.dt-card')[1]!
+  const repository = github.querySelector<HTMLInputElement>('input[placeholder]')
+  expect(repository?.value).toBe('acme/widgets')
+  expect(repository?.placeholder).toMatch(/octocat\/Hello-World/)
+  expect(repository?.placeholder).not.toBe('监听的仓库')
+  // A row being added is empty, so its example is what a person reads: one per column, never the column's own name.
+  const feishu = all('.dt-card')[0]!
+  await click([...feishu.querySelectorAll('button')].find(button => button.textContent === '添加')!)
+  const added = feishu.querySelectorAll('.dt-rows-item')[1]!
+  const pick = added.querySelector('select[aria-label="选择机器人已加入的群"]')
+  expect(pick).not.toBeNull()
+  // The Source's own text fields and the policy's account rows carry examples; none repeats its label.
+  const placeholders = [...document.querySelectorAll<HTMLInputElement>('.dt-card input[placeholder]')]
+  expect(placeholders.length).toBeGreaterThan(0)
+  expect(placeholders.map(input => input.placeholder)).toEqual(expect.arrayContaining([expect.stringMatching(/例如：/)]))
+  expect(placeholders.filter(input => input.placeholder === (input.getAttribute('aria-label') ?? 'x'))).toEqual([])
 })
 
 it('shows the account each CLI signs in as, and keeps a saved CLI on screen while xenra-superagent restarts', async () => {
@@ -126,30 +182,33 @@ it('points a setup problem at the settings that fix it', async () => {
   const scroll = vi.fn()
   Element.prototype.scrollIntoView = scroll
   await mount()
+  // The CLI the check wants is a Source field, so Home links to the GitHub card.
   expect(text()).toContain(zh.problemSetup)
   expect(text()).toContain(zh['setup.agentCliUnset'])
   // Nothing runs while setup waits, so the Executor says so instead of counting.
+  document.querySelector<HTMLDetailsElement>('.dt-home-more')!.open = true
   expect(text()).toContain(zh.executorWaitingSetup)
   expect(all('.dt-stat').map(stat => stat.textContent)).not.toContain('执行中2 / 3')
   expect(text()).toContain('在设置 › 来源的 GitHub 卡片修正后保存，会重新检查')
   await click(find(zh.problemSetup, 'button, a, [role="button"]'))
   expect(tab(zh['tab.settings']).getAttribute('aria-selected')).toBe('true')
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['term.source'])
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.source'])
   expect(all('.dt-card')[1]!.textContent).toContain('部署检查未通过：没有设置智能体的 GitHub CLI。')
   expect(scroll.mock.contexts).toContain(all('.dt-card')[1])
   delete (Element.prototype as Partial<Element>).scrollIntoView
-  await click(find(zh['settingsGroup.deployment'], '.dt-settings-link'))
-  expect(text()).toContain('部署检查未通过：没有设置智能体的 GitHub CLI。')
+  // A machine problem that leaves the installation unable to run is carried by the guide, which a fresh install opens on;
+  // the guide names the problem and links to the Deployment group where it is fixed.
+  server.setup = { ...server.setup, problem: problemOf('gitTooOld') }
+  await remount()
+  expect(document.querySelector('.dt-wizard-blocker')).not.toBeNull()
+  expect(text()).toContain('部署检查未通过：git 没有读取 xenra-superagent 为 github.com 写的凭据配置')
+  await click(zh.wizardOpenDeployment)
+  // Deployment is a group of the settings page but not one of its four everyday links, so the page title carries it.
+  expect(document.querySelector('.dt-settings-title')?.textContent).toBe(zh['settingsGroup.deployment'])
   // After a fix outside xenra-superagent, a check runs setup again.
   await click(zh.setupCheck)
   expect(server.requests.filter(request => request.path === 'setup/check')).toEqual([{ path: 'setup/check', method: 'POST' }])
   expect(text()).toContain(zh.setupChecking)
-  server.setup = { ...server.setup, problem: problemOf('gitTooOld') }
-  await remount()
-  await click(zh['tab.overview'])
-  await click(find(zh.problemSetup, 'button, a, [role="button"]'))
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.deployment'])
-  expect(text()).toContain('部署检查未通过：git 没有读取 xenra-superagent 为 github.com 写的凭据配置')
 })
 
 it('shows a failed Feishu bot check as a problem of the Feishu Source only, with a check after a fix outside xenra-superagent', async () => {
@@ -159,6 +218,7 @@ it('shows a failed Feishu bot check as a problem of the Feishu Source only, with
   expect(text()).toContain(zh.problemSetupFeishu)
   expect(text()).not.toContain('飞书 来源异常')
   await click(find(zh.problemSetupFeishu, 'button, a, [role="button"]'))
+  expect(tab(zh['tab.settings']).getAttribute('aria-selected')).toBe('true')
   const feishu = all('.dt-card')[0]!
   expect(feishu.textContent).toContain('部署检查未通过：应用 cli_bot 的机器人身份状态是 missing；用 lark-cli 配置应用密钥。')
   // xenra-superagent runs meanwhile, so checking again asks first: the restart interrupts running Executor Sessions.
@@ -167,9 +227,8 @@ it('shows a failed Feishu bot check as a problem of the Feishu Source only, with
   expect(server.requests.some(request => request.path === 'setup/check')).toBe(false)
   await click(zh.confirm)
   expect(server.requests.some(request => request.path === 'setup/check')).toBe(true)
-  await click(tab(zh['tab.source']))
   // The Source's state carries the problem once, not again as its health.
-  expect(all('.dt-form > .dt-list > .dt-row')[0]!.textContent?.match(/cli_bot 的机器人身份状态是 missing/g)).toHaveLength(1)
+  expect(card('飞书').textContent?.match(/cli_bot 的机器人身份状态是 missing/g)).toHaveLength(1)
 })
 
 it('leaves Feishu out of a GitHub-only deployment', async () => {
@@ -185,32 +244,30 @@ it('leaves Feishu out of a GitHub-only deployment', async () => {
 it('shows the Sources waiting for the deployment check, and the problem on the Source that fixes it, with its link', async () => {
   server.setup = { ...server.setup, problem: problemOf('repositoryUnset'), accounts: null }
   await mount()
-  await click(zh['tab.source'])
-  const rows = all('.dt-form > .dt-list > .dt-row')
+  await click(tab(zh['tab.settings']))
   // The GitHub Source is where the problem is fixed, so it shows the error; Feishu waits.
-  expect(rows.map(row => row.querySelector('.dt-status-text')?.textContent)).toEqual(['等待部署检查', '出错'])
+  expect(all('.dt-source .dt-status-text').map(state => state.textContent)).toEqual(['等待部署检查', '出错'])
   expect(text()).not.toContain('Waiting for setup')
-  expect(rows[1]!.textContent).toContain('部署检查未通过：GitHub 来源没有设置监听的仓库。')
-  await click(find(zh.sourceOpenSettings, '.dt-row button'))
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['term.source'])
+  expect(card('GitHub').textContent).toContain('部署检查未通过：GitHub 来源没有设置监听的仓库。')
+  // The problem sits in the card it belongs to, so no separate link is needed to reach it.
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.source'])
 })
 
 it('shows a Source\'s health in the interface language, and a diagnostic as reported', async () => {
   server.health = { github: { state: 'error', detail: '3 consecutive failed polls; last: EOF', code: 'pollFailures', values: { count: '3',
     error: 'EOF' } } }
   await mount()
-  await click(zh['tab.source'])
-  const github = all('.dt-form > .dt-list > .dt-row').find(row => row.querySelector('.dt-row-name')?.textContent === 'GitHub')!
+  await click(tab(zh['tab.settings']))
+  const github = card('GitHub')
   expect(github.textContent).toContain('GitHub 来源：连续 3 次轮询失败，最近一次：EOF')
   expect(github.textContent).not.toContain('consecutive')
-  const feishu = all('.dt-form > .dt-list > .dt-row').find(row => row.querySelector('.dt-row-name')?.textContent === '飞书')!
+  const feishu = card('飞书')
   expect(feishu.querySelector('.dt-mono')?.textContent).toBe('socket closed')
 })
 
 it('shows a refused Source save with the output of the tool that failed on its own line', async () => {
   await mount()
-  await click(zh['tab.source'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(tab(zh['tab.settings']))
   const feishu = all('.dt-card')[0]!
   await type(field<HTMLInputElement>('机器人的 lark-cli'), 'lark-broken')
   await act(async () => { feishu.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) }); await settle()
@@ -225,11 +282,16 @@ it('shows a setup problem on its Source card within one read of the settings, wh
   const card = () => document.getElementById('dt-source-github')!
   expect(card().textContent).not.toContain(zh['setup.agentCliUnset'])
   server.setup = { ...server.setup, problem: problemOf('agentCliUnset') }
-  // The settings are read every five seconds, as the state is; the Source settings do not read the Source status.
+  // The card comes from the shared settings read, which the panel shell and the group each poll once per interval.
+  const reads = () => server.requests.filter(request => request.path === 'settings').length
+  const before = reads()
   await act(async () => { await vi.advanceTimersByTimeAsync(5000) }); await settle()
-  expect(server.requests.filter(request => request.path === 'settings')).toHaveLength(2)
-  expect(server.requests.some(request => request.path === 'sources')).toBe(false)
+  expect(reads() - before).toBe(2)
   expect(card().textContent).toContain(zh['setup.agentCliUnset'])
+  // The card's health comes from the Source status route, which the group reads alongside the settings block.
+  expect(server.requests.some(request => request.path === 'sources')).toBe(true)
+  expect(all('.dt-source').find(element => element.querySelector('.dt-card-title')?.textContent === 'GitHub')!.textContent)
+    .toContain(zh['setup.agentCliUnset'])
 })
 
 it('lists the messages a Source did not send in the last day under it, newest first, with why and where they belong', async () => {
@@ -238,20 +300,21 @@ it('lists the messages a Source did not send in the last day under it, newest fi
     droppedReply('m2', 3, 'feishu', 'channelIgnored'), droppedReply('m1', 4, 'feishu', 'channelGone', { thread: false }),
     droppedReply('m0', 30, 'feishu', 'channelGone'), droppedReply('g0', 2, 'github', 'channelGone')]
   await mount()
-  await click(zh['tab.source'])
-  const [feishu, github] = all('.dt-form > .dt-list > .dt-row')
+  await click(tab(zh['tab.settings']))
+  // Each Source's dropped messages live inside that Source's own card.
+  const feishu = card('飞书'), github = card('GitHub')
   const disclosure = (scope: Element) =>
     [...scope.querySelectorAll<HTMLElement>('[data-disclosure-row]')].find(row => row.textContent?.includes(zh.sourceDroppedTitle))!
-  await click(disclosure(feishu!))
-  const rows = [...feishu!.querySelectorAll('.dt-disclosure-body .dt-row')].map(row => [row.querySelector('.dt-row-title')?.textContent,
+  await click(disclosure(feishu))
+  const rows = [...feishu.querySelectorAll('.dt-disclosure-body .dt-row')].map(row => [row.querySelector('.dt-row-title')?.textContent,
     row.querySelector('.dt-tag')?.textContent, row.querySelector('button')?.textContent])
   expect(rows).toEqual([['Reply m3', zh['reason.channelGone'], '修复回归'],
     ['Reply m2', zh['reason.channelIgnored'], zh['term.thread']], ['Reply m1', zh['reason.channelGone'], undefined]])
   expect(github!.textContent).toContain(`${zh.sourceDroppedTitle} 1`)
   await click(find('修复回归', '.dt-disclosure-body button'))
-  expect(tab(zh['tab.execution']).getAttribute('aria-selected')).toBe('true')
+  expect(tab(zh['tab.tickets']).getAttribute('aria-selected')).toBe('true')
   await remount()
-  await click(zh['tab.source'])
+  await click(tab(zh['tab.settings']))
   await click(disclosure(document.body))
   // A Feishu Channel names its chat; the link opens the Thread of the message it answers, which the host found.
   await click(find(zh['term.thread'], '.dt-disclosure-body button'))
@@ -261,7 +324,7 @@ it('lists the messages a Source did not send in the last day under it, newest fi
 
 it('takes no space for messages that were all sent', async () => {
   await mount()
-  await click(zh['tab.source'])
+  await click(tab(zh['tab.settings']))
   expect(text()).not.toContain(zh.sourceDroppedTitle)
 })
 

@@ -1,19 +1,22 @@
 import { execFile, spawn } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SENSITIVE_ENV_PATTERN, type SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import { GIT_LOCATION, agentVariables, credentialHelper, runAsWorker, verifyDirectory, withoutDirectory, workerBin, workerGitConfig, writeEnvironment }
+import { GIT_LOCATION, agentVariables, credentialHelper, removeState, runAsWorker, verifyDirectory, withoutDirectory, workerBin, workerGitConfig, writeEnvironment }
   from '../src/infra/environment.ts'
 import { CliError } from '../src/infra/commands.ts'
 import { testDeployment } from './fixtures/deployment.ts'
 import { gitEnv } from './fixtures/git.ts'
+import { POSIX, WINDOWS } from './fixtures/platform.ts'
 
 // Git and shell subprocesses can exceed the 5s default timeout when the test suite runs in parallel.
 vi.setConfig({ testTimeout: 30_000 })
 const exec = promisify(execFile)
+/** The file a shim takes on this platform: a batch file on Windows, which the platform finds by its extension. */
+const shimName = (command: string): string => WINDOWS ? command + '.cmd' : command
 let dir: string
 const program = (path: string, body: string): string => { writeFileSync(path, `#!/bin/sh\n${body}\n`); chmodSync(path, 0o755); return path }
 /** Worker shell environment after DSH strips credential-shaped variables. */
@@ -23,7 +26,7 @@ beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'environment-')); mkdirSync(
 afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
 
 describe('worker shims', () => {
-  it('run a wrapper that calls `gh` by name without reaching the shim again, and keep the caller\'s other PATH entries', async () => {
+  it.skipIf(!POSIX)('run a wrapper that calls `gh` by name without reaching the shim again, and keep the caller\'s other PATH entries', async () => {
     program(join(dir, 'real', 'gh'), 'echo "{\\"login\\":\\"agent-bot\\",\\"config\\":\\"$GH_CONFIG_DIR\\",\\"path\\":\\"$PATH\\"}"')
     const wrapper = program(join(dir, 'gh-agent'), `GH_CONFIG_DIR=${dir}/agent-config exec gh "$@"`)
     await writeEnvironment(testDeployment({ stateDir: dir, github: { ...testDeployment().github, cli: wrapper }, feishu: undefined }), [])
@@ -32,13 +35,13 @@ describe('worker shims', () => {
     const { stdout } = await exec('gh', ['api', 'user'], { env: { PATH: path }, timeout: 10_000 })
     expect(JSON.parse(stdout)).toEqual({ login: 'agent-bot', config: `${dir}/agent-config`, path: [join(dir, 'venv'), join(dir, 'real'), '/usr/bin', '/bin'].join(':') })
   })
-  it('make `lark-cli` fail without a Feishu bot and each blocked command fail with the agent\'s login', async () => {
+  it.skipIf(!POSIX)('make `lark-cli` fail without a Feishu bot and each blocked command fail with the agent\'s login', async () => {
     await writeEnvironment(testDeployment({ stateDir: dir, feishu: undefined }), ['personal-gh'])
     const bin = workerBin(dir)
     await expect(exec(join(bin, 'lark-cli'), ['im', '+chat-list'])).rejects.toMatchObject({ code: 1, stderr: 'lark-cli is unavailable: this installation has no Feishu bot.\n' })
     await expect(exec(join(bin, 'personal-gh'), [])).rejects.toMatchObject({ code: 1, stderr: 'personal-gh is blocked in this installation; use gh, which acts as agent-bot.\n' })
   })
-  it('keep `gh` and `lark-cli` working, and shim no `git`, when the blocked commands name the commands workers need', async () => {
+  it.skipIf(!POSIX)('keep `gh` and `lark-cli` working, and shim no `git`, when the blocked commands name the commands workers need', async () => {
     const gh = program(join(dir, 'gh-agent'), 'echo gh "$@"'), lark = program(join(dir, 'lark-bot'), 'echo lark "$@"')
     const base = testDeployment()
     await writeEnvironment(testDeployment({ stateDir: dir, github: { ...base.github, cli: gh }, feishu: { ...base.feishu!, cli: lark } }), ['gh', 'git', 'lark-cli'])
@@ -49,32 +52,75 @@ describe('worker shims', () => {
   it('replace only what xenra-superagent wrote and refuse anything else in its places', async () => {
     await writeEnvironment(testDeployment({ stateDir: dir }), ['old-cli'])
     await writeEnvironment(testDeployment({ stateDir: dir }), [])
-    expect(readdirSync(workerBin(dir)).sort()).toEqual(['gh', 'lark-cli'])
+    expect(readdirSync(workerBin(dir)).sort()).toEqual([shimName('gh'), shimName('lark-cli')].sort())
     // A file that merely contains the marker on a later line, a symlink to a shim, and a foreign gitconfig are all rejected.
-    writeFileSync(join(workerBin(dir), 'notes'), `notes\nmore\n${readFileSync(join(workerBin(dir), 'gh'), 'utf8').split('\n')[1]}\n`)
+    writeFileSync(join(workerBin(dir), 'notes'), `notes\nmore\n${readFileSync(join(workerBin(dir), shimName('gh')), 'utf8').split('\n')[1]}\n`)
     await expect(writeEnvironment(testDeployment({ stateDir: dir }), [])).rejects.toThrow(`${join(workerBin(dir), 'notes')} was not written by xenra-superagent`)
     rmSync(join(workerBin(dir), 'notes'))
-    symlinkSync(join(workerBin(dir), 'gh'), join(workerBin(dir), 'link'))
+    symlinkSync(join(workerBin(dir), shimName('gh')), join(workerBin(dir), 'link'))
     await expect(writeEnvironment(testDeployment({ stateDir: dir }), [])).rejects.toThrow('link was not written by xenra-superagent')
     rmSync(join(workerBin(dir), 'link'))
     writeFileSync(workerGitConfig(dir), '[user]\n\tname = someone\n')
     await expect(writeEnvironment(testDeployment({ stateDir: dir }), [])).rejects.toThrow(`${workerGitConfig(dir)} was not written by xenra-superagent`)
     expect(readFileSync(workerGitConfig(dir), 'utf8')).toBe('[user]\n\tname = someone\n')
   })
+  it('redirects only github.com, leaving every other host its own credential helper', async () => {
+    await writeEnvironment(testDeployment({ stateDir: dir }), [])
+    const text = readFileSync(workerGitConfig(dir), 'utf8')
+    // A blanket `[credential] helper =` empties the helper list for every host, so a codeup or GitLab remote the machine
+    // could still authenticate stopped working as soon as this file was in effect. Only github.com may be redirected.
+    expect(text).not.toMatch(/\[credential\]\s*\n\s*helper\s*=\s*$/m)
+    expect(text).toContain('[credential "https://github.com"]')
+  })
+  it('writes nothing outside its own state directory, whatever the machine already had', async () => {
+    // The invariant for anyone who installs this plugin: it must not change a git configuration the machine already had.
+    // Every path it writes is under `stateDir`; the operator's global, system and repository configurations are untouched.
+    const home = join(dir, 'home'); mkdirSync(home, { recursive: true })
+    const globalConfig = join(home, '.gitconfig')
+    writeFileSync(globalConfig, '[user]\n\tname = Operator\n[credential]\n\thelper = manager\n')
+    const before = readFileSync(globalConfig, 'utf8')
+    await writeEnvironment(testDeployment({ stateDir: dir }), [])
+    expect(readFileSync(globalConfig, 'utf8')).toBe(before)
+    // The worker's own configuration is the only git file it creates, and it replaces only what it wrote itself.
+    const written = readdirSync(dir).filter(name => name === 'worker-gitconfig' || name === 'worker-bin')
+    expect(written.sort()).toEqual(['worker-bin', 'worker-gitconfig'])
+    await expect(writeEnvironment({ ...testDeployment({ stateDir: dir }), stateDir: join(dir, 'nested', 'state') }, []))
+      .resolves.toBeUndefined()
+  })
+  it('removes only what it wrote, so uninstalling leaves no worker-gitconfig but keeps a person\'s own files', async () => {
+    await writeEnvironment(testDeployment({ stateDir: dir }), [])
+    // Something a person put in the same directory is not ours to delete.
+    writeFileSync(join(dir, 'notes.md'), 'my own notes\n')
+    const { removed, kept } = await removeState(dir)
+    expect(removed.sort()).toEqual([workerBin(dir), workerGitConfig(dir)].sort())
+    expect(kept).toEqual([])
+    // The old git configuration is gone, which is the point: a later git must not find it and use it.
+    expect(existsSync(workerGitConfig(dir))).toBe(false)
+    expect(existsSync(workerBin(dir))).toBe(false)
+    // The directory and the person's file survive, because deleting them would be the same mistake as overwriting them.
+    expect(readFileSync(join(dir, 'notes.md'), 'utf8')).toBe('my own notes\n')
+  })
+  it('keeps a worker-gitconfig it did not write, and says so', async () => {
+    writeFileSync(workerGitConfig(dir), '[user]\n\tname = someone\n')
+    const { removed, kept } = await removeState(dir)
+    expect(kept).toEqual([workerGitConfig(dir)])
+    expect(removed).toEqual([])
+    expect(readFileSync(workerGitConfig(dir), 'utf8')).toBe('[user]\n\tname = someone\n')
+  })
   it('replaces the files it wrote under the project\'s earlier names', async () => {
     await writeEnvironment(testDeployment({ stateDir: dir }), ['old-cli', 'older-cli', 'oldest-cli'])
     const legacy = (file: string, name: string) => writeFileSync(file, readFileSync(file, 'utf8').replace('Written by xenra-superagent', `Written by ${name}`))
-    legacy(join(workerBin(dir), 'old-cli'), 'dsh-tag'); legacy(join(workerBin(dir), 'older-cli'), 'dsh-freelancer'); legacy(workerGitConfig(dir), 'dsh-go')
+    legacy(join(workerBin(dir), shimName('old-cli')), 'dsh-tag'); legacy(join(workerBin(dir), shimName('older-cli')), 'dsh-freelancer'); legacy(workerGitConfig(dir), 'dsh-go')
     // Files left by the name the project had before this rename are still its own, so setup replaces them instead of stopping.
-    legacy(join(workerBin(dir), 'oldest-cli'), 'dsh-superagent')
+    legacy(join(workerBin(dir), shimName('oldest-cli')), 'dsh-superagent')
     await writeEnvironment(testDeployment({ stateDir: dir }), [])
-    expect(readdirSync(workerBin(dir)).sort()).toEqual(['gh', 'lark-cli'])
+    expect(readdirSync(workerBin(dir)).sort()).toEqual([shimName('gh'), shimName('lark-cli')].sort())
     expect(readFileSync(workerGitConfig(dir), 'utf8')).toContain('Written by xenra-superagent')
   })
 })
 
 describe('agent git configuration', () => {
-  it('ignores the operator\'s global and system git configuration, also after DSH drops credential-shaped variables', async () => {
+  it.skipIf(!POSIX)('ignores the operator\'s global and system git configuration, also after DSH drops credential-shaped variables', async () => {
     const home = join(dir, 'home'); mkdirSync(home)
     // Operator configuration that rewrites HTTPS to SSH, enables commit signing, and sets a credential helper.
     writeFileSync(join(home, '.gitconfig'), '[url "git@github.com:"]\n\tinsteadOf = https://github.com/\n[commit]\n\tgpgsign = true\n[credential]\n\thelper = osxkeychain\n')
@@ -98,6 +144,20 @@ describe('agent git configuration', () => {
   })
 })
 
+it('expects the credential helper exactly as the configuration writes it, on either platform', async () => {
+  // git reports the helper as the file holds it. A Windows path is written with forward slashes because Git for Windows runs
+  // a `!` helper through its own `sh`; the expected value must be built the same way, or `verifyEnvironment` reports a git
+  // that is perfectly new as too old. This case compares the two strings without running git, so it runs everywhere.
+  const cli = WINDOWS ? 'C:\\Program Files\\GitHub CLI\\gh.exe' : '/opt/agent tools/gh'
+  const helper = credentialHelper(cli)
+  if (WINDOWS) expect(helper).toBe(`!'C:/Program Files/GitHub CLI/gh.exe' auth git-credential`)
+  else expect(helper).toBe(`!'/opt/agent tools/gh' auth git-credential`)
+  // The saved configuration is the same string, quoted once.
+  await writeEnvironment(testDeployment({ stateDir: dir, github: { ...testDeployment().github, cli } }), [])
+  const saved = readFileSync(workerGitConfig(dir), 'utf8')
+  expect(saved).toContain(`[credential "https://github.com"]\n\thelper = "${helper}"`)
+})
+
 it('fails instead of asking the operator\'s askpass helpers when the agent\'s credential helper has no answer', async () => {
   const log = join(dir, 'asked')
   const askpass = program(join(dir, 'askpass'), `echo asked >> ${log}; echo operator-secret`)
@@ -113,7 +173,8 @@ it('fails instead of asking the operator\'s askpass helpers when the agent\'s cr
   expect(() => readFileSync(log, 'utf8')).toThrow()
 })
 
-it('removes every spelling of a directory from PATH and keeps the other entries', () => {
+// PATH joins with `:` and the case relies on creating a symlink, both POSIX host facts.
+it.skipIf(!POSIX)('removes every spelling of a directory from PATH and keeps the other entries', () => {
   mkdirSync(join(dir, 'state', 'worker-bin'), { recursive: true })
   symlinkSync(join(dir, 'state'), join(dir, 'link'))
   const bin = join(dir, 'state', 'worker-bin')
@@ -155,7 +216,7 @@ describe('ticket directory check', () => {
     writeFileSync(join(dir, 'repo', '.git', 'config'), '[core\n')
     await expect(check('repo')).rejects.toThrow(/bad config/)
   })
-  it('reports a failed command\'s exit status', async () => {
+  it.skipIf(!POSIX)('reports a failed command\'s exit status', async () => {
     const failing = ['sh', '-c', 'echo nope >&2; exit 3']
     const error = await runAsWorker(subprocess(join(dir, 'global')), failing, dir, signal).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(CliError)

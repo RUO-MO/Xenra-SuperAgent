@@ -1,27 +1,45 @@
 // @vitest-environment jsdom
-// The Eval status and settings.
+// The Assessments view and the Eval settings.
 import { act } from 'react'
 import { expect, it } from 'vitest'
 import { en, zh } from '../src/client/locales.ts'
-import { usePanel, mount, remount, settle, all, find, tab, click, type, text, field } from './fixtures/panel.tsx'
+import { usePanel, mount, remount, settle, all, find, tab, click, type, text, field, at } from './fixtures/panel.tsx'
 import { server } from './fixtures/panel-server.ts'
 
+/**
+ * Open the Assessments view the way a person does: the Settings tab, then the advanced link that sets `query.view`.
+ * The view has no tab of its own, so the Settings tab stays selected while it takes over the body.
+ */
+const openAssessments = async (name = zh['tab.evals']) => {
+  await click(tab(zh['tab.settings']))
+  await click(find(name, '.dt-settings-link'))
+}
 usePanel()
-it('opens the Decisions under Policy from the flow line with their reasons, Decisions that start work first, filterable by kind',
-  async () => {
+it('opens the Decisions under Policy from the Settings advanced view with their reasons, Decisions that start work first, filterable by kind', async () => {
   await mount()
-  await click(all('.dt-stat button')[1]!)
-  expect(tab(zh['tab.eval']).getAttribute('aria-selected')).toBe('true')
-  expect(server.requests.some(request => request.path === 'decisions?limit=30&kind=accept,reopen&window=24h')).toBe(true)
+  await openAssessments()
+  expect(tab(zh['tab.settings']).getAttribute('aria-selected')).toBe('true')
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['tab.evals'])
+  // Assessments opens on the Decisions that start work.
+  expect(server.requests.some(request => request.path === 'decisions?limit=30&kind=accept,reopen')).toBe(true)
   expect(text()).toContain(zh['reason.explicitRouted'])
   await click(zh.stop)
-  expect(server.requests.some(request => request.path === 'decisions?limit=30&kind=stop&window=24h')).toBe(true)
+  expect(server.requests.some(request => request.path === 'decisions?limit=30&kind=stop')).toBe(true)
   expect(text()).toContain('@bot 修一下')
   await click(zh['decision.ignore'])
-  expect(server.requests.some(request => request.path === 'decisions?limit=30&kind=ignore&window=24h')).toBe(true)
-  expect(text()).toContain(zh.none)
-  await click(zh.lastDayOnly)
   expect(server.requests.some(request => request.path === 'decisions?limit=30&kind=ignore')).toBe(true)
+  expect(text()).toContain(zh.none)
+})
+
+it('answers the last day from a 24-hour route on its own, and drops the window when it is cleared', async () => {
+  // The window is a route parameter, so a stored or linked 24-hour view still opens on the last day's Decisions.
+  at({ page: 'evals', query: { window: '24h' } })
+  await mount()
+  expect(server.requests.some(request => request.path === 'decisions?limit=30&kind=accept,reopen&window=24h')).toBe(true)
+  await click(zh.lastDayOnly)
+  expect(server.requests.some(request => request.path === 'decisions?limit=30&kind=stop&window=24h')).toBe(false)
+  expect(all('.dt-pill').some(pill => pill.textContent === zh.lastDayOnly)).toBe(false)
+  expect(server.requests.at(-1)?.path).toBe('decisions?limit=30&kind=accept,reopen')
 })
 
 it('keeps a Policy draft across remounts, and merges another save into it sender by sender and rule by rule', async () => {
@@ -32,8 +50,8 @@ it('keeps a Policy draft across remounts, and merges another save into it sender
       'ou_newperson'); await type(row.querySelector<HTMLInputElement>('input[aria-label="名字"]')!, '新人')
   }
   await mount()
-  await click(zh['tab.eval'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(tab(zh['tab.settings']))
+  await click(find(zh['settingsGroup.eval'], '.dt-settings-link'))
   expect(all('.dt-subtab').map(tab => tab.textContent)).toEqual(['飞书', 'GitHub'])
   await addUser()
   expect(text()).toContain(zh.draftKept)
@@ -60,7 +78,7 @@ it('keeps a Policy draft across remounts, and merges another save into it sender
 it('keeps the Policy to its rules and each Source\'s part, in that Source\'s own identities', async () => {
   await mount()
   await click(tab(zh['tab.settings']))
-  await click(find(zh['term.eval'], '.dt-settings-link'))
+  await click(find(zh['settingsGroup.eval'], '.dt-settings-link'))
   // Auto-merge and its threshold are prompt text, and no Source's settings sit in the Policy core.
   for (const gone of ['自动合并', '行数阈值', '成员', '计入策略版本']) expect(text()).not.toContain(gone)
   expect(all('.dt-lv').map(item => item.textContent)[0]).toBe('策略版本 abcdef12')
@@ -74,8 +92,8 @@ it('keeps the Policy to its rules and each Source\'s part, in that Source\'s own
 
 it('opens the rule list for an invalid field inside it only', async () => {
   await mount()
-  await click(zh['tab.eval'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(tab(zh['tab.settings']))
+  await click(find(zh['settingsGroup.eval'], '.dt-settings-link'))
   const openRows = () => all('.dt-disclosure[data-open]').length
   await act(async () => { field(zh.evalTimeout).dispatchEvent(new Event('invalid', { bubbles: false })) })
   expect(openRows()).toBe(0)
@@ -86,8 +104,8 @@ it('opens the rule list for an invalid field inside it only', async () => {
 
 it('syncs a Source\'s list from where the Source keeps it, but not while a Policy draft is unsaved', async () => {
   await mount()
-  await click(zh['tab.eval'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(tab(zh['tab.settings']))
+  await click(find(zh['settingsGroup.eval'], '.dt-settings-link'))
   expect([...all('.dt-part select')[0]!.querySelectorAll('option')].map(option => option.textContent)).toEqual(['不同步', '另一个群', '团队群'])
   await click(find('立即同步', '.dt-part button'))
   expect(server.requests.some(request => request.path === 'policy-sync/feishu' && request.method === 'POST')).toBe(true)
@@ -100,8 +118,8 @@ it('syncs a Source\'s list from where the Source keeps it, but not while a Polic
 
 it('adds, copies, renames, disables and deletes rules in Policy without touching Eval', async () => {
   await mount()
-  await click(zh['tab.eval'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(tab(zh['tab.settings']))
+  await click(find(zh['settingsGroup.eval'], '.dt-settings-link'))
   await click(zh.addRule)
   await type(field<HTMLInputElement>(zh.ruleName), '文档')
   await type(field<HTMLTextAreaElement>(zh.ruleInstruction), '修复失效链接')
@@ -117,19 +135,19 @@ it('adds, copies, renames, disables and deletes rules in Policy without touching
 
 it('shows the current Policy version once, explains what makes it up, and opens a Mandate\'s version in the Policy history', async () => {
   await mount()
-  await click(zh['tab.eval'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(tab(zh['tab.settings']))
+  await click(find(zh['settingsGroup.eval'], '.dt-settings-link'))
   await settle()
   expect(all('.dt-lv')[0]!.textContent).toBe('策略版本 abcdef12')
   expect(all('.dt-info').map(tip => tip.getAttribute('aria-label')).join('\n')).toContain('策略版本由接单规则、各来源上的策略和评估的接单模式决定')
   expect(all('.dt-tag').filter(tag => tag.textContent === '计入策略版本')).toHaveLength(0)
-  await click(tab(zh['tab.execution']))
+  // The version a Ticket was judged under opens the history at the save that made it.
+  await click(tab(zh['tab.tickets']))
   await click('修复回归')
   await click('abcdef12')
   expect(tab(zh['tab.settings']).getAttribute('aria-selected')).toBe('true')
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['term.eval'])
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.eval'])
   await settle()
-  // The history opens at the save that made the version, and lists versions that Source saves made too.
   expect(document.querySelector('.dt-highlight')?.textContent).toContain('生成策略版本 abcdef12')
   expect(text()).toContain('生成策略版本 98765432')
 })
@@ -140,7 +158,7 @@ it('sets the Feishu admission table per receiving scope, offering only the cells
       otherChats: 'none' } } } }
   await mount()
   await click(tab(zh['tab.settings']))
-  await click(find(zh['term.eval'], '.dt-settings-link'))
+  await click(find(zh['settingsGroup.eval'], '.dt-settings-link'))
   const rows = all('.dt-admission tbody tr').map(row => [row.querySelector('.dt-admission-scope')!.firstChild?.textContent,
     row.querySelectorAll('select').length])
   // Chats receiving every message have all three cells; @-only chats only the mention cell; other chats nothing while not received.
@@ -159,6 +177,7 @@ it('sets the Feishu admission table per receiving scope, offering only the cells
 
 it('lists each Source\'s bots next to its people and saves them, and sets the GitHub admission table by its receiving scopes', async () => {
   await mount()
+  // The Source's own switches live in the Source group; the Policy's per-Source parts live in Eval.
   await click(tab(zh['tab.settings']))
   // The GitHub Source receives only what is addressed to the agent until a switch opens a scope of the repository.
   const github = all('.dt-card').find(card => card.querySelector('.dt-card-title')?.textContent === 'GitHub')!
@@ -166,7 +185,7 @@ it('lists each Source\'s bots next to its people and saves them, and sets the Gi
     '接收仓库里的评论', '接收默认分支的 CI'])
   expect([...github.querySelectorAll('[role="switch"]')].slice(1).map(item => item.getAttribute('aria-checked'))).toEqual(['false', 'false',
     'false', 'false'])
-  await click(find(zh['term.eval'], '.dt-settings-link'))
+  await click(find(zh['settingsGroup.eval'], '.dt-settings-link'))
   const lists = () => all('.dt-part > .dt-field .dt-subhead .dt-field-head').map(head => head.firstChild?.textContent)
   const list = (label: string) => all('.dt-part > .dt-field').find(item => item.textContent?.startsWith(label))!
   const add = async (label: string) => {
@@ -203,7 +222,7 @@ it('shows the GitHub Source\'s switches for what it receives across the reposito
   await click(find('Receive comments in the repository', '[role="switch"]'))
   await act(async () => { github.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) }); await settle()
   expect(server.settings.sources.github!.config).toMatchObject({ observeIssues: true, observeComments: true, observeCi: true })
-  await click(find(en['term.eval'], '.dt-settings-link'))
+  await click(find(en['settingsGroup.eval'], '.dt-settings-link'))
   await click(find(en['source.github'], '.dt-subtab'))
   const rows = all('.dt-admission tbody tr').map(row => [row.querySelector('.dt-admission-scope')!.firstChild?.textContent,
     row.querySelectorAll('select').length])

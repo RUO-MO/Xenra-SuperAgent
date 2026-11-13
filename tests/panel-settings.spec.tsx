@@ -1,18 +1,18 @@
 // @vitest-environment jsdom
-// The Settings groups, drafts, save bars and history.
+// The Settings groups, drafts, save bars, history, and the advanced views beside them.
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Fields } from '../src/client/settings-kit.tsx'
 import { expect, it, onTestFinished } from 'vitest'
 import { zh } from '../src/client/locales.ts'
-import { usePanel, mount, remount, settle, all, find, tab, click, type, text, field } from './fixtures/panel.tsx'
+import { usePanel, mount, remount, settle, all, find, tab, click, type, text, field, at } from './fixtures/panel.tsx'
 import { server } from './fixtures/panel-server.ts'
 
 usePanel()
 it('keeps a person\'s own value where another save changed the same setting, and says so', async () => {
   await mount()
-  await click(zh['tab.execution'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(tab(zh['tab.settings']))
+  await click(find(zh['settingsGroup.execution'], '.dt-settings-link'))
   await type(field<HTMLInputElement>(zh.maxWorkers), '6')
   server.settings = { ...server.settings, executor: { ...server.settings.executor, maxWorkers: 4 } }
   server.revisions.executor = 1
@@ -23,17 +23,17 @@ it('keeps a person\'s own value where another save changed the same setting, and
   expect(server.settings.executor.maxWorkers).toBe(6)
 })
 
-it('saves the Eval block on the Policy settings and the Executor with its execution environment on the Execution settings, each against its own revision', async () => {
+it('saves the Eval block on the Eval settings and the Executor with its execution environment on the Execution settings, each against its own revision', async () => {
   await mount()
-  await click(zh['tab.eval'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(tab(zh['tab.settings']))
+  await click(find(zh['settingsGroup.eval'], '.dt-settings-link'))
   await click(zh['mode.auto'])
   await type(field<HTMLInputElement>(zh.evalTimeout), '180')
   const [provider, model] = all('.dt-model input')
   await type(provider as HTMLInputElement, 'worker-provider'); await type(model as HTMLInputElement, 'worker-model')
   await click(zh.save)
   expect(server.settings.eval).toEqual({ mode: 'auto', timeoutSeconds: 180, model: { provider: 'worker-provider', model: 'worker-model' } })
-  await click(find(zh['promptPart.runtime/work'], '.dt-settings-link'))
+  await click(find(zh['settingsGroup.execution'], '.dt-settings-link'))
   await type(field<HTMLInputElement>(zh.maxWorkers), '5')
   // An empty root uses the default directory, which the field names instead of looking set.
   expect(field<HTMLInputElement>(zh.executionDirectory).closest('.dt-field')!.querySelector('small')?.textContent).toBe('留空时用 /srv/xenra-superagent/work')
@@ -66,8 +66,8 @@ it('loads configuration history on demand with localized changes, Source field l
     changes: [{ code: 'mode', from: 'off', to: 'observe' }, { code: 'sourceRowsAdded', source: 'feishu', field: 'allowed', items: ['Bob'],
       part: true }, { code: 'sourceField', source: 'feishu', field: 'syncChat', from: '', to: 'oc_team', part: true }] }] }
   await mount()
-  await click(zh['tab.eval'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(tab(zh['tab.settings']))
+  await click(find(zh['settingsGroup.eval'], '.dt-settings-link'))
   expect(server.requests.some(request => request.path === 'policy/history')).toBe(false)
   await click(zh.configHistory)
   for (const expected of ['第 3 次保存 · 从群同步', '生成策略版本 abcdef12', '接单模式：关闭 → 仅观察', '飞书 · 能发起工作的飞书用户 新增：Bob', '飞书 · 同步来源群：未设置 → oc_team',
@@ -76,8 +76,8 @@ it('loads configuration history on demand with localized changes, Source field l
 
 it('shows save and discard only while a settings block has edits, at the end of that block', async () => {
   await mount()
-  await click(zh['tab.execution'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(tab(zh['tab.settings']))
+  await click(find(zh['settingsGroup.execution'], '.dt-settings-link'))
   expect(all('.dt-savebar')).toHaveLength(0)
   await type(field<HTMLInputElement>(zh.maxWorkers), '6')
   expect(all('.dt-savebar')).toHaveLength(1)
@@ -99,8 +99,9 @@ it('shows save and discard only while a settings block has edits, at the end of 
   await click(save)
   expect(all('.dt-savebar')).toHaveLength(0)
   expect(document.activeElement).toBe(workers.form)
-  await click(find(zh['term.source'], '.dt-settings-link'))
+  await click(find(zh['settingsGroup.source'], '.dt-settings-link'))
   expect(all('.dt-savebar')).toHaveLength(0)
+  // A Source's card holds its own status and fields, and starts open, so the fields are on screen.
   const github = all('.dt-card').find(card => card.querySelector('.dt-card-title')?.textContent === 'GitHub')!
   await type(field<HTMLInputElement>('智能体的 GitHub CLI'), 'gh-other')
   expect(github.lastElementChild!.classList.contains('dt-savebar')).toBe(true)
@@ -124,24 +125,46 @@ it('gives the focus back to the field that had it once a block\'s save ends', as
   expect(document.activeElement).toBe(input)
 })
 
-it('lists the settings groups stages first, opens each stage\'s group from its status, and returns to the last group opened',
-  async () => {
+it('lists the four everyday settings groups, then the advanced views, and opens each group from its status', async () => {
   await mount()
   await click(tab(zh['tab.settings']))
-  expect(all('.dt-settings-link').map(link => link.textContent)).toEqual(['来源', '评估', '执行', '提示词', '部署'])
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['term.source'])
-  for (const [tab, group] of [['来源', '来源'], ['评估', '评估'], ['执行', '执行']] as const) {
-    await click(find(tab, '[role="tab"]'))
-    await click(find(zh['tab.settings'], '.dt-status-head button'))
+  // 部署 is still a group, but it is a machine-level page reached from a deployment problem rather than an everyday link.
+  expect(all('.dt-settings-link').map(link => link.textContent)).toEqual(['来源', '评估', '执行', '提示词', zh['tab.threads'],
+    zh['tab.evals']])
+  expect(document.querySelector('.dt-nav-group')?.textContent).toBe(zh.tabAdvanced)
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.source'])
+  for (const [name, group] of [['来源', zh['settingsGroup.source']], ['评估', zh['settingsGroup.eval']],
+    ['执行', zh['settingsGroup.execution']]] as const) {
+    await click(find(name, '.dt-settings-link'))
     expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(group)
   }
-  // The Trigger stage has no settings, so its status offers none.
-  await click(tab(zh['tab.trigger']))
+  // The Threads status has no settings, so its status head offers none.
+  await click(find(zh['tab.threads'], '.dt-settings-link'))
   expect(all('.dt-status-head button').map(button => button.textContent)).not.toContain(zh['tab.settings'])
-  await click(tab(zh['tab.settings']))
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['promptPart.runtime/work'])
-  await click(tab(zh['tab.trigger']))
+  await click(find(zh['settingsGroup.prompts'], '.dt-settings-link'))
   await remount()
   await click(tab(zh['tab.settings']))
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['promptPart.runtime/work'])
+  // The last group opened is remembered, and the advanced view gives way to it.
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.prompts'])
+})
+
+it('opens the Threads and Assessments views from Settings, which take over the body and keep the settings navigation', async () => {
+  await mount()
+  await click(tab(zh['tab.settings']))
+  await click(find(zh['tab.threads'], '.dt-settings-link'))
+  // The view is the Threads status, with the settings links still there to step back into configuration.
+  expect(document.querySelector('.dt-settings-title')?.textContent).toBe(zh['tab.threads'])
+  expect(server.requests.some(request => request.path === 'threads?filter=subscribed&limit=20')).toBe(true)
+  expect(all('.dt-settings-nav button').map(link => link.textContent)).toEqual(['来源', '评估', '执行', '提示词', zh['tab.threads'],
+    zh['tab.evals']])
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['tab.threads'])
+  // No settings group is current while an advanced view is open, so nothing in the everyday list looks selected.
+  expect(all('.dt-settings-link[aria-current="page"]')).toHaveLength(1)
+  await click(find(zh['tab.evals'], '.dt-settings-link'))
+  expect(document.querySelector('.dt-settings-title')?.textContent).toBe(zh['tab.evals'])
+  expect(server.requests.some(request => request.path === 'decisions?limit=30&kind=accept,reopen')).toBe(true)
+  // Stepping back into a group leaves the advanced view.
+  await click(find(zh['settingsGroup.source'], '.dt-settings-link'))
+  expect(document.querySelector('.dt-settings-title')?.textContent).toBe(zh['settingsGroup.source'])
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.source'])
 })

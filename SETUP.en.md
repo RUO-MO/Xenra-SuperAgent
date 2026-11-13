@@ -26,7 +26,8 @@ command -v lark-cli
 grep -l -E 'id: xenra-superagent\b' "${DSH_HOME:-$HOME/.dsh}"/profiles/*/cordis.patch.yml 2>/dev/null
 ```
 
-- **Prerequisites:** Node.js 22.19+ or 24+, pnpm, git 2.32+, tmux, Python 3.8+, GitHub CLI 2.48+, and DSH within the `engines.dsh` range of `package.json`. A missing one becomes an item of the plan, not a question. DSH also needs a model provider; if the operator has never run DSH with a model, configuring one is an operator step.
+- **Prerequisites:** Node.js 22.19+ or 24+, pnpm, git 2.32+, tmux, Python 3.8+, GitHub CLI 2.48+, and DSH within the `engines.dsh` range of `package.json`, currently `^0.2.2-rc.1`. A missing one becomes an item of the plan, not a question. DSH also needs a model provider; if the operator has never run DSH with a model, configuring one is an operator step.
+- **Platform:** the plugin itself runs on Linux, macOS and Windows — the shims are `.cmd` batch files on Windows, the prepare command runs through `cmd`, and executable lookup follows PATHEXT. `scripts/xenra-superagent` (start/stop and its exit codes) needs tmux and `ps`, so it runs on POSIX hosts only. When the operator works on native Windows, change the plan's start/stop step to launching `dsh --profile xenra` directly and judging readiness from `GET state` or the panel; use WSL when they need the script's behaviour.
 - **Operator login:** the `gh api user` result is the operator's own GitHub login, used as the recommendation in question 5.
 - **Existing profile:** a profile with a `xenra-superagent` entry is an earlier setup: ask whether to continue it, keep its configuration, and read Upgrade in `docs/006-deployment.md`.
 
@@ -54,7 +55,7 @@ Ask in this order, one per message, following the flow of work in [docs/001-doma
 
 Do not ask about values with a good default; list them in the plan instead:
 
-- profile `xenra`, a copy of DSH's Web profile kept apart from the profile the operator works in, so it restarts without closing their Sessions; port `3082`; state directory `<home>/.dsh/state/xenra-superagent` as an absolute path;
+- profile `xenra`, a copy of DSH's Web profile kept apart from the profile the operator works in, so it restarts without closing their Sessions; port `3082`; the default state directory `<home>/.dsh/state/xenra-superagent`, unless it must live elsewhere;
 - an hourly check from the operator's own profile, which repairs xenra-superagent when it is not running;
 - branch prefix `agent/`;
 - accept mode `observe`, which records proactive work without doing it, and the default rules and prompt sections;

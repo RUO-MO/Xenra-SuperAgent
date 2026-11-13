@@ -7,6 +7,7 @@
 - id: xenra-superagent
   config:
     stateDir: <absolute path, for example /home/me/.dsh/state/xenra-superagent>
-# Feishu is optional: uncomment to enable its Source, then set the bot's lark-cli on the Feishu Source.
+# The Feishu Source is on by default and stays idle until its card has a bot CLI, so nothing here is needed to use it:
+# give the Feishu card that CLI in Settings → Sources. Turning it off entirely is the only reason to name the row.
 # - id: xenra-superagent-feishu
-#   disabled: false
+#   disabled: true

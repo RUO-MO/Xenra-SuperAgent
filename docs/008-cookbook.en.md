@@ -2,37 +2,43 @@
 
 [中文](008-cookbook.md) · English
 
-This cookbook shows how to extend xenra-superagent. It uses the terms in [001 Domain model](001-domain.en.md) and [002 Authorization](002-authorization.en.md), and the components in [007 Architecture](007-architecture.en.md).
+This guide shows how to extend Xenra-SuperAgent. It uses the terms of [001 Domain model](001-domain.en.md) and [002 Authorization](002-authorization.en.md) and the components of [007 Architecture](007-architecture.en.md). Each recipe names the files to change, the interface to implement and the test to add.
 
-## Add a Source
+There are five extension points, from cheapest to most expensive:
 
-This recipe implements a Source kind called `webhook`. It reads an imaginary message queue through an invented CLI, `hookq`, and converts messages to Triggers. All other interfaces are part of xenra-superagent.
+| Extension | Changes | Restart? | Risk |
+| --- | --- | --- | --- |
+| A new built-in prompt part | `prompts/`, `src/app/context.ts`, `src/app/prompts.ts`, `src/client/locales.ts` | Yes: the built-in text is read when the module loads | Low |
+| A new main-Session or Executor tool | `src/app/tools/` | Yes | Medium: the prompts and `tests/model-surface.spec.ts` change too |
+| A new panel page or view | `src/client/` | Rebuild `lib/client.js` after changing the client plugin, then refresh the page | Medium |
+| A new Source kind | `src/sources/`, `src/kv.ts`, `tsdown.config.ts`, `package.json`, `cordis.patch.yml` | Yes | High: it writes persistent records |
+| A new settings block | `src/policy.ts`, `src/app/settings.ts`, `src/app/api.ts`, the panel | Yes | High: it touches revisions and migration |
 
-The implementation has four responsibilities: translate events, define receiving and authorization rules, provide replies and context, and maintain a polling loop. The numbered steps build those pieces in order.
+## Adding a Source
 
-The example assumes this CLI contract:
+This recipe implements a Source kind called `webhook`: it reads a message queue through an imaginary CLI, `hookq`, and turns messages into Triggers. Every other interface belongs to Xenra-SuperAgent.
 
-- `hookq pull --after <n> --json` prints the messages after position `n`, oldest first: `{"me": "<the agent's id on the queue>", "items": […], "next": <position>}`. An item has `id`, `conversation`, `thread` (the id of the message that started its thread, absent on that message), `sender` with `id` and `bot`, `mentions_me`, `text`, `at` and `url`.
-- `hookq reply --conversation <id> --to <message id> --key <key> --text <text>` replies under a message, once per key. For a conversation that was deleted it fails with `{"error": {"code": 410, "message": "…"}}` on standard error.
-- `hookq thread --conversation <id> --root <message id> --json`, with `--after <cursor>` for a later page, prints a page of a thread, oldest first: `{"items": […], "next": "<cursor>"}`, without `next` on the last page.
+Fix the CLI contract first; all the code below is written against it:
 
-Put the kind and its plugin entry in `src/sources/webhook.ts`, following `src/sources/github.ts`. If the Source grows, split translation, Channel and polling code into separate modules as the Feishu Source does.
+- `hookq pull --after <n> --json` prints the messages after position `n`, oldest first: `{"me": "<the agent's id on the queue>", "items": […], "next": <position>}`. An item carries `id`, `conversation`, `thread` (the id of the message that opened its Thread, empty on that message), `sender` with `id` and `bot`, `mentions_me`, `text`, `at` and `url`.
+- `hookq reply --conversation <id> --to <message id> --key <key> --text <text>` replies under a message, once per key. When the conversation is gone it prints `{"error": {"code": 410, "message": "…"}}` to standard error and fails.
+- `hookq thread --conversation <id> --root <message id> --json`, with `--after <cursor>` to page, prints one page of the Thread, oldest first: `{"items": […], "next": "<cursor>"}`, and the last page has no `next`.
 
-### 1. Map the events onto the domain
+Put the kind in `src/sources/webhook.ts`, following the skeleton of `src/sources/github.ts`. Once the Source grows, split translation, Channel and loop into `webhook-trigger.ts`, `webhook-channel.ts`, `webhook-read.ts` and `webhook-loops.ts`, as Feishu does.
 
-Choose stable mappings before writing code. Trigger ids, Thread ids and Channel addresses are persisted, so changing them later can disconnect existing records.
+### 1. Map the events onto the domain first
+
+Settle the mapping before writing code. Trigger ids, Thread ids and Channel addresses are persisted, and changing them later leaves existing records unmatched.
 
 | Concept | For the webhook queue |
 | --- | --- |
 | Trigger | One message |
-| Thread | A message and the replies to it in one conversation: `<conversation>:<id of the first message>` |
-| Actor | The sender's id on the queue, as the allowed list names it |
-| Channel address | The conversation and the message a reply goes under |
-| Receiving scope | A conversation, with its own row in the admission table |
+| Thread | One message and its replies in a conversation, with the id `<conversation>:<first message id>` |
+| Actor | The sender's id on the queue |
+| Channel address | The conversation and message a reply goes to |
+| Receiving scope | One conversation, one row in the admission table |
 
-### 2. Configuration: schema, fields, facts and health
-
-The module imports what the steps below use:
+The module imports these:
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -44,6 +50,8 @@ import { KV } from '../kv.ts'
 import { health, sourceContext, type SourceContext } from './host.ts'
 import type { SourceKind } from './kind.ts'
 ```
+
+### 2. Configuration, fields, facts and health
 
 ```ts
 const ConfigSchema = z.object({
@@ -70,35 +78,35 @@ export const webhookKind: SourceKind<WebhookConfig> = {
       label: { zh: '轮询间隔 / 秒', en: 'Polling interval / seconds' } },
   ],
   health: ['webhook'],
-  // find, scope, channel, threadContext, policy and environment follow in the next steps.
+  // scope, channel, threadContext, policy and environment come in the steps below.
 }
 ```
 
-- `kind` is the stable Source id. It appears in Trigger `source`, Thread-key prefixes, the `source:webhook` settings block and the Source Policy.
-- `schema` validates stored configuration and supplies defaults. Before an operator saves an instance, the registry creates an enabled instance from those defaults. Make defaults receive nothing; this example defaults to no conversations.
-- `fields` generates the Source settings form without custom panel code. A `rows` field edits entries keyed by its first column; `advanced` hides less common settings. Implement `refreshLabels` if the Source can resolve ids to display names. Save those names under `KV.sources.labels(kind)`. Columns with `choose` and `refresh` can then offer them.
-- Optional `facts(deployment)` displays values derived by setup, such as the account behind a CLI. Setup currently checks only GitHub and Feishu fields listed in `SETUP_FIELDS`, so this example supplies no facts.
-- `health` declares the Source's health entries, initially `starting`. Registration claims each name and refuses collisions with entries such as `runtime`, `reply`, `worker` or effect kinds. Use the kind's name and reserve `sync:<id>` for Policy syncs. An `error` makes the status script exit 2 and the hourly check notify the operator, so report it only when human action may be needed.
+- `kind` is the stable Source id. It appears in a Trigger's `source`, the Thread key prefix, the `source:webhook` settings block and the Policy's Source part.
+- `schema` validates the stored configuration and fills defaults. The registry builds an instance for every installed kind that takes effect before an operator saves anything, so the defaults must receive nothing: this example listens to no conversation by default.
+- `fields` generates the Source settings card's form without panel code. `rows` edits entries keyed by their first column, and `advanced` folds a rarely changed field behind "Advanced". A kind that can resolve an id to a display name implements `refreshLabels`, stores the names under `KV.sources.labels(kind)`, and its columns can then offer `choose` and `refresh`.
+- The optional `facts(deployment)` shows read-only values derived from the deployment, such as the account behind a CLI. Setup checks only the GitHub and Feishu fields listed in `SETUP_FIELDS`, so this example provides none.
+- `health` declares the health entries this kind owns, starting as `starting`. Registration claims those names on the `HealthBoard` and refuses duplicates and any name beginning with `sync:`. Reporting `error` makes `scripts/xenra-superagent status` exit 2 and the hourly check tell a person, so report it only when a person has to act.
 
-### 3. Translate a message into a Trigger
+### 3. Turn a message into a Trigger
 
-Validate CLI responses before converting them:
+Validate the CLI's output first:
 
 ```ts
-/** One message as `hookq pull` and `hookq thread` print it. */
+/** A message, shaped as `hookq pull` and `hookq thread` print their items. */
 const MessageSchema = z.looseObject({
   id: z.string().min(1), conversation: z.string().min(1), thread: z.string().optional(),
   sender: z.looseObject({ id: z.string(), bot: z.boolean().default(false) }), mentions_me: z.boolean().default(false),
   text: z.string(), at: z.string(), url: z.string().optional(),
 })
 type QueueMessage = z.infer<typeof MessageSchema>
-/** The answer of `hookq pull`, whose items are read one by one, and of `hookq thread`. */
+/** One `hookq pull` answer (read its `items` one by one), and one `hookq thread` answer. */
 const PageSchema = z.looseObject({ me: z.string(), items: z.array(z.unknown()), next: z.number().int() })
 const ThreadPageSchema = z.looseObject({ items: z.array(MessageSchema), next: z.string().optional() })
 ```
 
 ```ts
-/** The Trigger of one queue message; the agent's own messages produce none. */
+/** One queue message's Trigger; the agent's own messages produce none. */
 export function webhookTrigger(message: QueueMessage, me: string): Trigger | undefined {
   if (message.sender.id === me) return undefined
   const thread = `${message.conversation}:${message.thread ?? message.id}`
@@ -119,22 +127,22 @@ export function webhookTrigger(message: QueueMessage, me: string): Trigger | und
 }
 ```
 
-- **Stable ids.** Derive the Trigger id from the queue id through `key`. `Engine.receive` returns `duplicate` for stored ids, and duplicate accepts create only one Ticket. Re-reading messages is therefore safe. To treat edits as new events, include an edit version in the id, as GitHub does with comment `updated_at`.
-- **Threads.** The first Thread is primary and owns the Eval. Additional Threads add Correlation context. The Source chooses the id; its full key is `webhook:<id>`.
-- **Sender.** Use Source-native ids in `actor`. Set `human: false` for bots and CI. Listed bots can only become inferred candidates. An empty actor id, as for CI, uses the admission cell for unlisted, unaddressed senders. Set `addressed` to `mention` or `direct` only when the message actually addresses the agent; this gives an allowed person's message explicit strength. Never produce a Trigger for the agent's own message.
-- **Reply destination and metadata.** `channel` identifies where replies go; `url` links to the source message. `channel.thread` groups messages for ordered delivery: a Ticket's later messages wait behind its earlier ones until an earlier message has failed three times. Other Tickets do not wait. Keep Source-specific fields in `meta`, such as the receiving conversation and Thread root. Both `meta` and `text` are untrusted data, not authorization.
+- **Stable ids.** Derive the Trigger id from the queue id with `key`. The same id entering the Engine again answers `duplicate`, and accepting twice produces one Ticket, so rereading is safe. To treat an edit as a new event, put the edit's version in the id, as GitHub does with a comment's `updated_at`.
+- **Threads.** The first Thread is the primary one, hosting the Eval; further Threads only add context. The full key of `threads[0]` is `webhook:<id>`.
+- **Senders.** `actor.id` uses the Source's own id. Set `human: false` for bots and CI. A listed bot can only become an inferred candidate. A sender-less event (CI, say) takes the "off the list, not addressed to the agent" cell. Set `addressed` only when the message really addresses the agent, which gives a listed person explicit strength. Never produce a Trigger for the agent's own message.
+- **Channel and metadata.** `channel` says where a reply goes, and `channel.thread` orders delivery: a message waits behind an earlier one for the same Ticket and conversation until that one has failed three times in a row. `url` points at the Source message. Source-specific fields go into `meta`, which the core never interprets. Both `text` and `meta` are untrusted data, not authority.
 
-Agents can read the new kind through `orchestrator_read trigger/<id>` and `thread/<key>`. These expose message text, disposition and neighboring Triggers. A new kind does not automatically receive a built-in skill, resources for original service records or pull-request binding.
+`orchestrator_read trigger/<id>` and `thread/<key>` read the new kind directly, showing message text, disposition and neighbouring Triggers. A new kind does not get built-in skills, original-record resources or pull request binding for free.
 
-Text search works without extra code. Implement `find(query)` when people use Source-specific references such as message ids, URLs or `#12`. Return the Thread keys and search terms those references identify:
+Full-text search needs no extra code. For people to find messages by a Source-native reference (a message id, a URL, `#12`), implement `find(query)`:
 
 ```ts
   find: query => ({ threads: [], terms: [...new Set(query.match(/\bm[0-9]+\b/g) ?? [])] }),
 ```
 
-Here a queue message id in the query, such as `m42`, searches the Triggers for it.
+A queue message id in the query (such as `m42`) then retrieves its Trigger.
 
-### 4. What the Source receives: scope
+### 4. What the Source receives: `scope`
 
 ```ts
   scope({ meta }, config) {
@@ -144,11 +152,11 @@ Here a queue message id in the query, such as `m42`, searches the Triggers for i
   },
 ```
 
-The Engine calls `scope` through `SourceRegistry` for each incoming Trigger. Out-of-scope messages are stored as filtered with their reason and create no Thread. Pass messages to `receive` rather than silently dropping them in the polling loop, so the panel can explain filtering.
+The Engine asks the kind about every incoming Trigger through `SourceRegistry.scope`. A message outside the scope is recorded as `filtered` with the kind's reason and creates no Thread. Hand those messages to `receive` rather than dropping them quietly in the loop, so the panel can explain why they were filtered.
 
-`observed: true` means the Source receives unaddressed messages in that scope, allowing admission-table decisions for them. `row` identifies the corresponding admission row.
+`observed: true` means the kind receives unaddressed messages in that scope, so the admission table may judge them per cell. `row` names that table row and must match the id `policy.rows()` returns.
 
-Revalidation calls `scope` with the Mandate's stored metadata. Make it depend only on `meta` and configuration. Resuming requires `listened`, not `observed`. Without `scope`, a kind receives every Trigger it produces but observes none.
+Revalidating a Mandate calls `scope` with only the `meta` stored on the Mandate and the current configuration, so it may depend on nothing else. Resuming needs `listened`, not `observed`. A kind without `scope` receives every Trigger it produces and observes none.
 
 ### 5. Replies: the Channel
 
@@ -176,17 +184,17 @@ export async function sendWebhook(host: Pick<SourceContext, 'commands'>, message
 }
 ```
 
-- **Idempotent sends.** Outbox calls `SourceRegistry.send`, which invokes `channel.send`. Messages wait while the Source plugin is unloaded. A send may fail after the remote service received it, so retries must not duplicate messages. Use `message.id` as an idempotency key: `hookq` supports `--key`; GitHub stores a hidden comment marker; Feishu accepts an idempotency key.
-- **Permanent versus retryable failure.** Return `sent` on success and `gone` only when delivery is permanently impossible, such as the example's 410. A gone message is retained as dropped and never queued again; it appears in `GET sources` and on the Source page. Throw for other failures so Outbox retries after 5 seconds, doubling to 300 seconds. `CliError.code` is the code reported by the CLI output.
-- **Allowed destinations.** `allowed(address, config)` checks only the saved address and current configuration. Put every required fact in the address; for example, Feishu records whether the chat is direct. A destination no longer listened to is dropped, while a disabled Source leaves messages waiting. Without `allowed`, all addresses are permitted while the Source is enabled.
-- **Links.** `link(address, links)` returns the URL and label the panel displays through `SourceRegistry.link`.
+- **Idempotent sending.** The Outbox calls `SourceRegistry.send`, which calls `channel.send`. While the kind is not installed, a message answers `waiting` and waits. A send can still fail after the remote side received it, so a retry must not duplicate the message: use `message.id` as the idempotency key. `hookq` takes `--key`, GitHub keeps a hidden marker in the comment, and Feishu accepts an idempotency key.
+- **Permanent and retryable failures.** Answer `sent` on success, and `gone` only when delivery is permanently impossible (410 here); such a message stays as `dropped`, is never queued again, and appears in `GET sources` and on the Source page. Throw on anything else and let the Outbox retry from 5 seconds with exponential backoff up to 300 seconds. `CliError.code` is the code the CLI's output reports.
+- **Allowed targets.** `allowed(address, config)` judges from the stored address and the current configuration alone; a target no longer listened to is dropped, and while the kind is off its messages wait. Without `allowed`, every address may receive a reply as long as the kind is enabled.
+- **Links.** `link(address, links)` returns the URL and label the panel shows through `SourceRegistry.link`; the `url` is empty when the deployment information is missing.
 
 ### 6. Thread context for assessments
 
 ```ts
   threadContext: {
     messageId: trigger => String(trigger.meta.messageId ?? ''),
-    // A queue thread is flat: its root, and the message a reply answers, are on its first page, as on GitHub.
+    // The queue's Threads are flat: the root, and the message a reply answers, are on the first page, as with GitHub.
     read: async (commands, trigger, _part, cursor) => {
       const page = ThreadPageSchema.parse(JSON.parse(await commands.run('hookq', ['thread', '--conversation',
         String(trigger.meta.conversation), '--root', String(trigger.meta.root), '--json', ...(cursor ? ['--after', cursor] : [])])))
@@ -197,21 +205,21 @@ export async function sendWebhook(host: Pick<SourceContext, 'commands'>, message
   },
 ```
 
-Proactive assessment needs the conversation around a Trigger. `orchestrator_eval` reads an initial window; `orchestrator_eval_read` expands pages, the root or the parent message. Implement the optional `threadContext` interface to provide these reads:
+A proactive assessment needs the conversation around the Trigger. `orchestrator_eval` reads the initial window, and `orchestrator_eval_read` expands a page, the root or the parent message. Implement the optional `threadContext`:
 
-- `read(commands, trigger, part, cursor, config)` returns a `ContextPart`. Its `messages` use `ContextMessage`: `{id, from, at, text}` plus applicable `bot`, `deleted`, `reply_to`, `url`, `path` and `line` fields. `next` is omitted on the last page. `body` is the content shown to the assessing Session, here the same messages. Optional `status` can describe special results such as Feishu's `chat_neighbours`. `part` is `thread`, `root` or `parent`.
-- `messageId(trigger)` finds the Trigger's own message among them.
-- `images(text)` and `image(…)` are for a kind whose messages carry images, as Feishu's do; the example leaves them out.
+- `read(commands, trigger, part, cursor, config)` returns a `ContextPart`. Its `messages` are `ContextMessage`s: `{id, from, at, text}` plus whatever of `bot`, `deleted`, `reply_to`, `url`, `path` and `line` applies. The last page omits `next`. `body` is what the assessing Session sees. An optional `status` describes a special outcome, such as Feishu's `chat_neighbours`. `part` is `thread`, `root` or `parent`.
+- `messageId(trigger)` gives the id of the Trigger's own message among the Thread's messages, which is how an assessment locates it.
+- `images(text)` and `image(…)` serve kinds with images (Feishu, for instance); this example omits them.
 
-A kind without `threadContext` gives assessments no Thread context; the Trigger's own text stays readable.
+`admissionContext` in `src/sources/admission-context.ts` bounds `read` at `admissionContextMaxPages` pages and then hands the result to `threadWindow`, which selects the first five messages plus five on either side of the Trigger. So as long as `read` pages faithfully, the assessment's window is bounded.
 
-If messages reply to earlier messages, add `repliesTo(trigger)`. It returns the corresponding Trigger id, allowing follow-up notices and worker Inputs to show the replied-to message when stored. For example, if `hookq` supplies `reply_to` and translation stores it as `meta.replyTo`:
+When a message answers an earlier one, add `repliesTo(trigger)` returning the answering Trigger's id, so relays and Executor Inputs can show it:
 
 ```ts
   repliesTo: trigger => typeof trigger.meta.replyTo === 'string' ? key('webhook', trigger.meta.replyTo) : undefined,
 ```
 
-### 7. Who may ask: the Source's part of the Policy
+### 7. Who may originate work: the Policy part
 
 ```ts
   policy: {
@@ -229,11 +237,13 @@ If messages reply to earlier messages, add `repliesTo(trigger)`. It returns the 
   },
 ```
 
-- `schema` validates the Source Policy, including `allowed` sender ids. Id comparison is case-insensitive. Admission tables are validated separately and shared across kinds. This Policy part is saved at `policy.sources.webhook` and contributes to the Policy version.
-- `fields` generates the form under **Eval → On each Source**, beginning with `allowed`. `explicit` explains how to address the agent. Optional `unnamed: {person, bot}` supplies display labels for opaque ids such as Feishu's `ou_…`; this example omits it because queue ids are readable names.
-- `rows(config)` lists admission scopes and their available cells. Each row id must match the `row` returned by `scope`. Unaddressed-message cells are available only where the Source observes those messages. Kinds without `rows` use default cells.
-- Optional `bots` lists bots eligible for inferred candidacy, using the same entry shape as `allowed`. Without it, no bot is admitted.
-- Optional `sync: {label, ready(part), run(host, part, signal)}` refreshes membership at startup and on **Sync now**. Feishu uses chat membership. Failures appear under `sync:<id>` and retry after one minute, doubling to one hour until successful.
+- `schema` validates the Source's part of the Policy, including the `allowed` senders. Ids compare case-insensitively. The admission table is validated separately by `src/policy.ts` and shared across kinds. The part is stored under `policy.sources.webhook` and counts toward the Policy version.
+- `fields` generates the form under **Eval → On each Source**, and its first field must be `allowed`. `explicit` says what counts as addressing the agent. The optional `unnamed: { person, bot }` labels unreadable ids such as a Feishu `ou_…`; this example omits it, because a queue id is readable.
+- `rows(config)` lists the admission scopes and which of their cells are available, and each row id must match the `row` that `scope` returns. Those cells are available only when the kind observes unaddressed messages. Kinds without `rows` use the admission table's defaults.
+- The optional `bots` lists the bots that may become inferred candidates, shaped like `allowed`; without it no bot is admitted.
+- The optional `sync: { label, ready(part), run(host, part, signal) }` refreshes the list at startup and on **Sync now**. Feishu uses chat membership. A failure is recorded under `sync:<id>` and retried with a backoff from a minute to an hour.
+
+`SourcePolicyPart`'s generic requires a type that is `Record<string, unknown> & { allowed: { id: string; name?: string }[] }`, which the schema above infers exactly.
 
 ### 8. Variables for the Executor
 
@@ -247,9 +257,9 @@ If messages reply to earlier messages, add `repliesTo(trigger)`. It returns the 
   },
 ```
 
-Execution settings show declared `variables` beside the prepare command even when the Source is disabled. While enabled, `values` supplies Ticket-specific values using deployment, configuration and the originating Trigger.
+The Execution settings list the declared `variables` beside the prepare command, even while the kind is disabled. While it is enabled, `values` computes each variable from the deployment, the configuration and the originating Trigger. The prepare command reads them as environment variables, and the Executor reads them with their descriptions in its instructions.
 
-The prepare command reads environment variables; the worker reads their values in its instructions. Use the `XENRA_SUPERAGENT_<KIND>_…` prefix, return an empty value for Tickets from another Source, and never include credentials.
+Use the `XENRA_SUPERAGENT_<KIND>_…` prefix, return an empty value for a Ticket from another Source, and never put a credential in one: the host strips variables whose names contain KEY, PASSWORD, SECRET or TOKEN, so they would never arrive.
 
 ### 9. The plugin entry and its loop
 
@@ -261,7 +271,7 @@ export function apply(ctx: Context): void {
   ctx.effect(() => {
     const source = sourceContext(ctx.orchestrator, webhookKind)
     const controller = new AbortController()
-    // DSH ends its process on an unhandled rejection, so a failure that escapes the loop becomes the Source's health.
+    // DSH ends the process on an unhandled rejection, so a failure escaping the loop becomes Source health.
     const running = watch(source, controller.signal)
       .catch((error: unknown) => { source.report('webhook', { state: 'error', detail: String(error) }) })
     return async () => { controller.abort(); await running }
@@ -269,12 +279,12 @@ export function apply(ctx: Context): void {
 }
 ```
 
-The plugin injects `orchestrator`. Its first effect registers the kind and unregisters it on disposal. The second runs the polling loop with a `SourceContext`. Disposal aborts the loop and awaits completion, including during application stop or restart.
+The plugin injects `orchestrator`, the `SourceHost`. The first effect registers the kind and returns its disposer; the second runs the loop and returns the cleanup that aborts it and waits for it to end. Both cleanups run when the application stops or restarts.
 
 ```ts
 async function watch(ctx: SourceContext, signal: AbortSignal): Promise<void> {
   await ctx.ready
-  // Setup restarts xenra-superagent once it resolves the accounts; until then the Source reads nothing.
+  // Xenra-SuperAgent restarts once setup resolves the accounts; before that a Source reads nothing.
   if (!ctx.configured()) { ctx.report('webhook', health('paused', 'setupPending')); return }
   let failures = 0
   while (!signal.aborted) {
@@ -288,7 +298,7 @@ async function watch(ctx: SourceContext, signal: AbortSignal): Promise<void> {
         ctx.report('webhook', { state: 'ready', detail: `${read} messages, ${unreadable} unreadable`, at })
       } catch (error) {
         failures += 1
-        // One network failure is retried on the next round; three in a row need a person.
+        // One network failure retries on the next round; three in a row need a person.
         if (!signal.aborted && failures >= 3) {
           ctx.report('webhook', health('error', 'pollFailures', { count: String(failures), error: String(error) }))
         }
@@ -298,7 +308,7 @@ async function watch(ctx: SourceContext, signal: AbortSignal): Promise<void> {
   }
 }
 
-/** Read the queue after the cursor, take in each message, then move the cursor past them. */
+/** Read the queue after the cursor, take in every message, then move the cursor past them. */
 export async function pollQueue(ctx: SourceContext, signal: AbortSignal): Promise<{ read: number; unreadable: number }> {
   const after = ctx.state.get(KV.webhook.cursor) ?? 0
   const output = await ctx.commands.withSignal(signal).run('hookq', ['pull', '--after', String(after), '--json'])
@@ -319,29 +329,29 @@ export async function pollQueue(ctx: SourceContext, signal: AbortSignal): Promis
 }
 ```
 
-- **Setup and the switch.** Wait for `ctx.ready`, and read nothing while `ctx.configured()` is false. Read `ctx.config(kind)` on every round: it is undefined while the Source is off.
-- **Cursors.** Store read positions in `ctx.state` using typed entries in `KV` (`src/kv.ts`), such as `webhook: {cursor: record<number>('webhook-cursor')}`. `tests/store.spec.ts` requires key literals to appear only in that registry. External packages can define keys with exported `record` and `family`. Setting `undefined` removes a record; `ctx.atomic` groups writes in a transaction.
+- **Configuration and switches.** Await `ctx.ready`, and read nothing while `ctx.configured()` is false. Read `ctx.config(kind)` on every round: it returns `undefined` while the kind is off.
+- **The cursor.** Keep the read position in `ctx.state`, with a key registered in `KV` (`src/kv.ts`), such as `webhook: { cursor: record<number>('webhook-cursor') }`. `tests/store.spec.ts` requires key literals to appear only in that table; an external package can define its own keys with the exported `record` and `family`. Setting a key to `undefined` removes the record, and `ctx.atomic` folds several writes into one transaction.
 
-  Advance a cursor only after every covered Trigger has been stored. An interrupted round leaves the cursor unchanged; stable ids make replay safe. For timestamp cursors, `cursorAt(started)` from `src/sources/poll.ts` subtracts five seconds to allow for late remote writes.
-- **Thread metadata.** After receiving a Trigger, call `ctx.threads.describe(key, {label, url, facts})` to populate its display information. `ctx.threads.patch(key, meta)` delegates to `threads.patchMeta`, setting Source-owned keys or removing them when the value is `undefined`. Both ignore absent Threads, including those of filtered Triggers.
-- **Per-item errors.** Count malformed items and continue rather than failing the entire batch. `validItems(item, list, tally)` in `src/infra/commands.ts` supports this pattern. For independently polled Threads, use `pollThreads` from `src/sources/poll.ts`; it records each failure as `pollError`. Its `polled` predicate keeps live subscriptions and a two-week window after the later of the last Trigger and Ticket end.
-- **Health.** Write only declared entries through `ctx.report`. `health(state, code, values)` provides fixed messages such as `setupPending`, `sourceOff` and `pollFailures`. Count consecutive failures before reporting `error`.
-- **Abort.** Pass the signal to `ctx.commands.withSignal(signal)` and to `delay`, and check it between items, so a stop or a restart ends the loop at once.
+  Advance the cursor only after every Trigger in the batch is stored. An interrupted round leaves the cursor alone, and stable ids make replay safe. A timestamp cursor uses `cursorAt(started)` from `src/sources/poll.ts`, which steps back five seconds to catch late remote writes.
+- **Thread metadata.** After receiving a Trigger, call `ctx.threads.describe(key, { label, url, facts })` to fill in its display information; `ctx.threads.patch(key, meta)` sets the Source's own keys and removes one when its value is `undefined`. Both ignore a Thread that does not exist, including the Thread of a filtered Trigger.
+- **Per-item errors.** Count the malformed items and continue rather than failing the batch. `validItems(item, list, tally)` in `src/infra/commands.ts` is that pattern. To poll Threads independently, use `pollThreads` from `src/sources/poll.ts`, which records each failure as `pollError` and uses `polled` to decide whether a Thread is still within the observation window.
+- **Health.** Write only your own declared entries, through `ctx.report`. `health(state, code, values)` provides fixed texts such as `setupPending`, `sourceOff` and `pollFailures`, which the panel translates by `code`. Count consecutive failures before reporting `error`.
+- **Aborting.** Pass `signal` to `ctx.commands.withSignal(signal)` and to `delay`, and check it between items, so a stop or restart ends the loop at once.
 
-This example does not send Source-originated notices. A Source that needs them calls `ctx.notify`; Outbox delivers them like other replies.
+This example sends no notifications of its own. When a Source needs one, call `ctx.notify`; the Outbox delivers it like any other reply.
 
-It also does not bind Threads to Ticket completion. Use `ctx.tickets.bindThread` and `threadClosed` only when a Source's Thread lifecycle determines whether work is done, as GitHub pull requests do. The Engine still decides when the Ticket ends.
+This example does not bind Threads to Tickets either. Do that with `ctx.tickets.bindThread` and `threadClosed` only when the Source's Thread lifetime decides whether work is done (GitHub's pull requests are the case); when a Ticket ends stays the Engine's decision.
 
 ### 10. Register the plugin
 
-Build the module as its own entry in `tsdown.config.ts`:
+First add the entry to the first block of `tsdown.config.ts`:
 
 ```ts
 entry: { index: 'src/index.ts', 'github-watch': 'src/sources/github.ts', 'feishu-watch': 'src/sources/feishu.ts',
   'webhook-watch': 'src/sources/webhook.ts' },
 ```
 
-Then export the built file in `package.json` by adding `"./webhook-watch": "./lib/webhook-watch.js"` to `exports`, and add the plugin to the `insert` list of the bundle's `cordis.patch.yml`, disabled, as Feishu is:
+Add `"./webhook-watch": "./lib/webhook-watch.js"` to `package.json`'s `exports` for the built output, then add the plugin to the bundle's `cordis.patch.yml` `insert` list, disabled, as Feishu is:
 
 ```yaml
     - id: xenra-superagent-webhook
@@ -349,15 +359,32 @@ Then export the built file in `package.json` by adding `"./webhook-watch": "./li
       disabled: true
 ```
 
-Enable the plugin in a profile's `cordis.patch.yml` with `id: xenra-superagent-webhook` and `disabled: false`. Build and restart. The new Source appears in Sources settings and under **Eval → On each Source**.
+Then enable it in a profile's `cordis.patch.yml` with `id: xenra-superagent-webhook` and `disabled: false`. Rebuild and restart, and the new Source appears in the Source settings and under **Eval → On each Source**.
 
-Add its module and spec to the module and test tables in [007 Architecture](007-architecture.en.md). `tests/docs.spec.ts` checks that both indexes are complete.
+Finally add the module and its test to both tables of [007 Architecture](007-architecture.en.md); `tests/docs.spec.ts` checks that the two indexes are complete.
 
-### 11. Tests
+### 11. The test to add
 
-Create `tests/webhook.spec.ts` using the pattern in `tests/sources.spec.ts`: a real Store in a temporary directory, a `SourceRegistry` with `HealthBoard`, an Engine with stand-in ports, and a `SourceContext` from `sourceContextOf`.
+Create `tests/webhook.spec.ts` following `tests/sources.spec.ts`: a real `Store` in a temporary directory, a `SourceRegistry` with its `HealthBoard`, an `Engine` with stand-in ports, and the `SourceContext` that `sourceContextOf` builds.
 
-Mock CLI calls by spying on `Commands.run`. Also spy on `withSignal`, because it normally returns a new `Commands` instance.
+Fake the CLI calls with `vi.spyOn` on `Commands.run`. Fake `withSignal` as well, since it usually returns a new `Commands`.
+
+```ts
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { expect, it, vi } from 'vitest'
+import { Engine, key, type Trigger } from '../src/core/index.ts'
+import { HealthBoard } from '../src/infra/health.ts'
+import { Commands } from '../src/infra/commands.ts'
+import { SettingsSchema, settingsPolicy } from '../src/policy.ts'
+import { sourceContextOf, type SourceContextDeps } from '../src/app/source-context.ts'
+import { Store } from '../src/app/store.ts'
+import { SourceRegistry } from '../src/sources/registry.ts'
+import { testDeployment } from './fixtures/deployment.ts'
+import { KV } from '../src/kv.ts'
+import { pollQueue, webhookKind, type WebhookConfig } from '../src/sources/webhook.ts'
+```
 
 ```ts
 function host(overrides: Partial<SourceContextDeps> = {}) {
@@ -366,7 +393,7 @@ function host(overrides: Partial<SourceContextDeps> = {}) {
     sources: { webhook: { enabled: true, config: { conversations: [{ id: 'ops', listen: 'mentions' }] } } },
     policy: { sources: { webhook: { allowed: [{ id: 'alice' }] } } },
   }))
-  // The registry claims the kind's health entries on the board, where the test reads them.
+  // The registry claims the kind's health entry on the board, and the test reads it from there.
   const board = new HealthBoard()
   const sources = new SourceRegistry(() => store.settings(), board)
   sources.register(webhookKind)
@@ -375,12 +402,12 @@ function host(overrides: Partial<SourceContextDeps> = {}) {
     outbox: { send: vi.fn(), status: () => undefined, withdraw: vi.fn() } })
   const commands = new Commands(() => testDeployment(), {}, new AbortController().signal)
   const receive = vi.fn((trigger: Trigger) => { const result = engine.receive(trigger); engine.evaluateDue(); return result })
-  // The Source's own notices go to the outbox, which keeps their receipts and sends nothing here.
+  // The Source's own notifications enter the outbox; here they only record a receipt and send nothing.
   const deps: SourceContextDeps = { store, engine, outbox: { send: message => { store.receipts.add(message) } }, commands, sources,
     deployment: testDeployment(), ready: Promise.resolve(), configured: () => true, receive, ...overrides }
   return { ...deps, store, engine, commands, receive, health: board.all, ctx: sourceContextOf(deps, webhookKind) }
 }
-/** The queue as `hookq` answers it. */
+/** A queue that answers the way `hookq` does. */
 function queue(h: ReturnType<typeof host>, answer: () => unknown) {
   vi.spyOn(h.commands, 'withSignal').mockReturnValue(h.commands)
   return vi.spyOn(h.commands, 'run').mockImplementation(async () => JSON.stringify(answer()))
@@ -393,7 +420,7 @@ it('takes in what the queue holds after the cursor, once, and moves the cursor a
   expect(await h.receive.mock.results[0]!.value).toBe('stored')
   expect(await h.receive.mock.results[1]!.value).toBe('filtered')
   expect(h.store.get(KV.webhook.cursor)).toBe(3)
-  // An allowed sender who mentions the agent makes an explicit request.
+  // A sender on the list mentioned the agent, which makes an explicit request.
   expect(h.engine.candidate(key('webhook', 'm1'))?.strength).toBe('explicit')
   await pollQueue(h.ctx, new AbortController().signal)
   expect(await h.receive.mock.results[2]!.value).toBe('duplicate')
@@ -403,24 +430,73 @@ it('takes in what the queue holds after the cursor, once, and moves the cursor a
 
 `message(id, fields)` builds a queue item. Cover at least:
 
-- the translation: a stable id, the Thread, the actor, `human` and `addressed`, and no Trigger for the agent's own message;
-- a round: Triggers stored once, one outside the scope `filtered`, the cursor moved after them, an allowed sender's mention evaluated as `explicit`;
-- a round cut short, which keeps its cursor;
-- `send`: `sent`, `gone` for a 410 only, and a throw for any other failure, with the CLI's error built by `commandError`;
-- the Thread context: the messages of a page and the cursor of the next, as `tests/registry.spec.ts` reads a kind's Threads through `SourceRegistry.threadContext`;
-- the plugin: `apply` registers the kind and reports `setupPending` while setup waits, its disposers unregister the kind, and a failure that escapes the loop becomes the Source's health instead of an unhandled rejection;
-- the Source's part of the Policy and its admission rows, as `tests/registry.spec.ts` and `tests/policy.spec.ts` check the Feishu Source's.
+- translation: stable ids, the Thread, the actor, `human` and `addressed`, and the agent's own messages producing no Trigger;
+- one round: each Trigger stored once, one outside the scope `filtered`, the cursor moved past them, and a listed sender's mention assessed as `explicit`;
+- an interrupted round leaving the cursor alone;
+- `send`: `sent` on success, `gone` only for 410, and anything else thrown, with the CLI's error carried out as `CliError`;
+- thread context: a page's messages and the next page's cursor, matching how `tests/registry.spec.ts` reads a kind's Thread through `SourceRegistry.threadContext`;
+- the plugin: `apply` registering the kind, reporting `setupPending` while setup waits, its cleanup unregistering the kind, and a failure escaping the loop becoming Source health rather than an unhandled rejection;
+- the Policy part and its admission rows, as `tests/registry.spec.ts` and `tests/policy.spec.ts` check Feishu's.
 
 ### Checklist
 
-1. Map Triggers, Threads, actors, Channel addresses and receiving scopes.
-2. Write the kind: `schema`, `fields`, `health`, and `facts` if setup derives any.
-3. Translate events into Triggers with stable ids, and drop the agent's own.
-4. Decide what the Source receives in `scope`, from `meta` alone.
-5. Give it a Channel whose `send` posts each message once and answers `gone` only when the conversation can never receive it.
-6. Give assessments its Thread context, if it can read a Thread.
-7. Give it a part of the Policy with `allowed` and the admission rows.
+1. Settle the mapping: Trigger, Thread, actor, Channel address and receiving scope.
+2. Write the kind: `schema`, `fields`, `health`, and `facts` when the configuration implies them.
+3. Translate events into Triggers with stable ids, and discard the agent's own messages.
+4. Decide in `scope`, from `meta` and the configuration alone, what the Source receives.
+5. Give it a Channel whose `send` sends each message once and answers `gone` only when the target can never receive it.
+6. Provide `threadContext` if it can read Threads.
+7. Give it a Policy part with `allowed` and its admission rows.
 8. Register its execution environment variables.
-9. Write the plugin entry and a loop that waits for setup, follows the switch, moves cursors after `receive`, keeps errors per item, reports health and stops on abort; name the cursors in `KV`.
-10. Add the build entry, the export and the `cordis.patch.yml` insert, and list the module and its spec in the tables of 007.
-11. Test it as `tests/sources.spec.ts` tests the other Sources.
+9. Write the plugin entry and its loop: await setup, follow the switch, move the cursor after `receive`, keep errors per item, report health, and stop when aborted; name its cursor key in `KV`.
+10. Add the build entry, the `exports` and the `cordis.patch.yml` insert, and list the module and its test in both tables of 007.
+11. Test it the way `tests/sources.spec.ts` tests the other Sources.
+
+## Adding a prompt part
+
+Prompt composition lives in `src/app/prompts.ts`. A part has four things: a key, its default text, the roles that read it, and its template placeholders, if any.
+
+1. **The default text.** Fixed built-in text lives in `prompts/`, one sentence per line, read and joined into paragraphs by `promptFile` in `src/app/context.ts`. To add one, create `prompts/verification.md` and export `verificationPrompt = promptFile('verification')` from `context.ts`.
+2. **Register the part.** Add the key to `PART_KEYS` (for example `'runtime/verification'`) and an entry to `builtInParts()`, such as `{ roles: BOTH, text: verificationPrompt }`. `roles` decides which role's prompt reads it. List any placeholder (such as `{variables}`) in `placeholders`, or an override will not be checked for losing it.
+3. **Place it in the order.** `promptParts(config, role, environment, policy)` decides the order: `runtime/shared` and the role's part first, then the three team sections, then subscriptions, replies and routing or work, then the accept constraints, the hand-off, the execution environment and the Policy. A new part must appear there, or it reaches no prompt.
+4. **Panel copy.** Add a `promptPart.<key>` entry in both languages to `src/client/locales.ts`; `tests/panel-prompts.spec.tsx` checks that `builtInParts()` and the copy table list the same keys.
+5. **Contract tests.** `tests/cards.spec.ts` lists, file by file, the rules the built-in text must state. Add a row there when the new part states a rule that cannot be dropped; the `BUDGET` in `tests/model-surface.spec.ts` also moves closer as the text grows, so raise it deliberately when needed.
+
+The team sections (`communication`, `scope`, `delivery`) take another route: `TEAM_SECTIONS` and `TEAM_HEADINGS` define them, their headings are the panel's section titles, and changing them touches `tests/prompts.spec.ts`.
+
+## Adding a tool
+
+Tools live in `src/app/tools/`. Decide first which role owns the new one: the main Session's tools are in `main.ts`, the Executor's in `executor.ts`, and both use the `Tool` type from `tool.ts`.
+
+This example adds a read-only tool to the Executor that reads one Assignment's full report: a Ticket card's `preview` is only the latest report's summary, cut by `preview()` at 160 characters.
+
+```ts
+tool({
+  name: 'orchestrator_assignment_report',
+  description: 'Read the full report of one of this ticket\'s assignments; its card shows only a 160-character preview of the latest.',
+  schema: z.object({ assignment_id: z.string().min(1) }).strict(),
+  execute: async (args, signal) => readResource(host.resources, `ticket/${ticketId}/report/${args.assignment_id}`, 0, undefined, ticketId, signal),
+})
+```
+
+`ticketId` is the id of the ticket `executorTools(host, ticket)` received; the other tools of `executorTools` close over that ticket the same way. Add it to the array `executorTools` returns, and `Sessions` registers it when it decorates the Executor Session.
+
+The rules:
+
+- **The description is all a model reads.** Say who calls it and when, and what it changes. `tests/model-surface.spec.ts` checks that every tool name it mentions is registered, that enum options are valid, that no legacy term appears, and that the whole surface stays within its size budget.
+- **Use `.strict()` schemas.** Extra fields are refused on the model's side, so a wrong call never reaches the body.
+- **Authority first, then the tool.** A tool makes no authorization decision of its own; it calls an Engine role interface (`EngineForMainSession`, `EngineForExecutor`, and so on), and a refusal is a `UserError` the panel words by `code`. When the domain needs a new action, add the Engine command and its role interface first, and never change the repositories from a tool.
+- **Keep panel-only actions out.** There is no tool for the execution environment, account fields, closing an unfinished Decision, rerunning setup or refreshing display names; `orchestrator_trigger_requeue` deliberately refuses a Trigger whose follow-up an Executor still owns.
+- **Take dependencies from the host.** When a tool needs a new capability, extend `MainToolsHost` or `ExecutorToolsHost` and provide it from `toolHost` in `src/app/runtime.ts`; do not reach for the `Runtime`. A ticket-reading tool also has to serve the Executor side: `readResource` filters ids by caller, so an Executor Session sees neither other Tickets nor Decisions.
+- **Tests.** `tests/tools.spec.ts` covers tool registration, role-scoped resource reads and each refusal; `tests/model-surface.spec.ts` counts the new tool against the budget and checks that no prompt names a tool that does not exist.
+
+## Adding a panel view
+
+The panel lives in `src/client/`, and its modules may not import each other in a cycle (`tests/controls.spec.tsx` walks the graph).
+
+- **A single page.** For a new tab, change `TABS` and the `Route` union in `src/client/route.ts`, its branch in `parseRoute`, and add a `case` in the `Pages` component of `src/client/app.tsx`. A settings page only needs an entry in `SETTINGS_GROUPS`.
+- **Data comes from the host.** Use `usePoll` and `call` from `src/client/api.ts` to read the routes declared in `src/app/api.ts`. New data means a new route and response type there, an implementation in the `routes` table of `src/app/http.ts`, and a view function under `src/app/views/`. `tests/fixtures/panel-server.ts` implements every route, so a new one has to be added there too.
+- **Copy.** All copy goes through keys in `src/client/locales.ts`, one entry per language, with identical placeholders (`tests/locales.spec.ts` checks them).
+- **Styles.** Use the classes in `client.css` and the `--dsw-alias-*` tokens, one rule per line; `tests/styles.spec.ts` rejects a class no component uses.
+- **Controls.** Use the local copies in `src/client/controls.tsx` or the shared widgets in `widgets.tsx`; do not import `@deepseek-ai/dsh-client-ui-primitives`.
+- **Tests.** Create a new `tests/panel-*.spec.tsx` following the others: `tests/fixtures/panel.tsx` provides `mount`, `click`, `type`, `field`, `tab` and friends, and the fake server answers by route and records any undeclared query parameter.

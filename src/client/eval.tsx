@@ -17,13 +17,13 @@ export function EvalStatus({ filter, window, paused }: { filter: DecisionFilter;
   const [limit, setLimit] = useState(30)
   const { data, error } = usePoll(() => call('GET decisions', { query: { limit, kind: DECISION_KINDS[filter],
     ...window ? { window } : {} } }), [filter, limit, window])
-  const show = (key: DecisionFilter, last24h: boolean) => navigate({ page: 'eval', query: { ...key === 'work' ? {} : { filter: key },
+  const show = (key: DecisionFilter, last24h: boolean) => navigate({ page: 'evals', query: { ...key === 'work' ? {} : { filter: key },
     ...last24h ? { window: '24h' } : {} } }, true)
   return <>
     <StatusHead hint={t('evalStatusIntro')} settings="eval" />
     {paused && <p className="dt-banner">
       {t('evalRecordsPaused')} <button type="button" className="dt-textlink"
-        onClick={() => navigate({ page: 'execution' })}>{t('resumeWhere')}</button>
+        onClick={() => navigate({ page: 'tickets', query: {} })}>{t('resumeWhere')}</button>
     </p>}
     <div className="dt-filters">
       {DECISION_FILTERS.map(key => <Pill key={key} active={filter === key} onClick={() => { setLimit(30); show(key, !!window) }}>
@@ -49,8 +49,9 @@ function RuleRow({ rule, expanded, onToggle, onChange, onDuplicate, onRemove }: 
       || undefined} />} title={name} open={expanded} onToggle={onToggle}
       collapsedContent={<span className="dt-rule-preview">{rule.instruction}</span>}>
       <div className="dt-rule-body">
-        <Field label={t('ruleName')}><Input value={rule.name} required maxLength={LIMITS.ruleName} onChange={event => onChange({ ...rule,
-          name: event.target.value })} /></Field>
+        <Field label={t('ruleName')}><Input value={rule.name} required maxLength={LIMITS.ruleName}
+          placeholder={t('ruleNamePlaceholder')}
+          onChange={event => onChange({ ...rule, name: event.target.value })} /></Field>
         <Field label={t('ruleInstruction')}>
           <textarea className="dt-textarea" rows={4} required maxLength={LIMITS.ruleInstruction} value={rule.instruction}
             placeholder={t('ruleInstructionPlaceholder')}

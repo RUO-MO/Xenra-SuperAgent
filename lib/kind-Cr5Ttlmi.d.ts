@@ -502,7 +502,7 @@ declare class SourceRegistry implements SourceScope {
 type SetupPlace = 'deployment' | 'github' | 'feishu';
 declare const SETUP_PROBLEMS: {
   readonly foreignFile: readonly ["deployment", "{file} was not written by xenra-superagent; move it, or choose another state directory."];
-  readonly gitTooOld: readonly ["deployment", "git does not read the github.com credential configuration xenra-superagent writes; xenra-superagent needs git 2.32 or later."];
+  readonly gitTooOld: readonly ["deployment", "git does not read the github.com credential configuration xenra-superagent writes; xenra-superagent needs git 2.32 or later. Git {version} was used, and it reported {actual} instead of {expected}."];
   readonly environmentFailed: readonly ["deployment", "Preparing the agent environment failed."];
   readonly repositoryUnset: readonly ["github", "The GitHub Source names no repository."];
   readonly agentCliUnset: readonly ["github", "The agent GitHub CLI is not set."];
@@ -776,6 +776,7 @@ type FieldSpec = FieldBase & {
   pattern?: string;
   readonly?: boolean;
   choose?: Localized;
+  placeholder?: Localized;
 } | FieldBase & {
   type: 'fact';
   settings?: 'deployment';
@@ -789,6 +790,7 @@ type FieldSpec = FieldBase & {
     optional?: boolean;
     choose?: Localized;
     refresh?: Localized;
+    placeholder?: Localized;
   } | {
     key: string;
     label: Localized;

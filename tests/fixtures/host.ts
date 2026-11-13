@@ -15,6 +15,7 @@ import { feishuKind, feishuTrigger } from '../../src/sources/feishu.ts'
 import { githubKind } from '../../src/sources/github.ts'
 import { Commands } from '../../src/infra/commands.ts'
 import { credentialHelper, workerGitConfig } from '../../src/infra/environment.ts'
+import { shellCommand } from '../../src/infra/platform.ts'
 import type { Trigger } from '../../src/core/index.ts'
 import { testMachine } from './deployment.ts'
 
@@ -106,17 +107,20 @@ export function subagentRuntime(agents: Map<string, FakeAgent>) {
     child.settled.resolve()
   }
   const service = {
-    waitForChildren: vi.fn(async (parent: { id: string }) => {
+    waitForTreeWork: vi.fn(async (parent: { id: string }) => {
       const live = [...children.values()].filter(child => child.parent === parent.id && child.live)
       await Promise.all(live.map(child => child.settled.promise))
       return live.length > 0
     }),
-    listChildren: vi.fn(async (id: string) => [...children].filter(([, child]) => child.parent === id).map(([childId]) => ({ id: childId }))),
-    drainChildren: vi.fn(async (_parent: { id: string }, ids: readonly string[]) => { for (const id of ids) settle(id) }),
+    listDescendants: vi.fn(async (id: string) => [...children].filter(([, child]) => child.parent === id)
+      .map(([childId]) => ({ id: childId, depth: 1 }))),
     drainDescendants: vi.fn(async (parents: readonly { id: string }[]) => {
+      // A drained root ends, closing its own admission, and its descendants end with it; its parent keeps admitting subagents.
       for (const parent of parents) {
         closed.add(parent.id)
-        for (const [id, child] of children) if (child.parent === parent.id) settle(id, false)
+        for (const [id, child] of children) if (child.parent === parent.id) settle(id)
+        const entry = children.get(parent.id)
+        if (entry?.live) settle(parent.id)
       }
     }),
     interrupt: vi.fn((id: string) => { settle(id) }),
@@ -157,7 +161,10 @@ export async function startRuntime(seed?: (store: Store) => void) {
     while (argv[0] === 'env' || /^[A-Z_]+=/.test(argv[0] ?? '')) argv.shift()
     const reader = (text: string) => ({ readFrom: () => ({ text, nextOffset: text.length, lossy: false }) })
     const exited = { exitCode: 0, signal: null }
-    const done = argv[0] === 'sh' && hooks.prepare ? hooks.prepare.then(() => exited) : Promise.resolve(exited)
+    // A prepare command runs through the platform shell, so `hooks.prepare` holds the shell's child open rather than only a
+  // POSIX one; every other program the Host starts ends at once.
+  const shellProgram = shellCommand('x')[0]
+  const done = argv[0] === shellProgram && hooks.prepare ? hooks.prepare.then(() => exited) : Promise.resolve(exited)
     return { done, collected: { stdout: reader(answers[argv.join(' ')] ?? ''), stderr: reader('') } }
   }) }
   const agents = new Map<string, FakeAgent>()
@@ -231,11 +238,11 @@ export async function startRuntime(seed?: (store: Store) => void) {
     }),
     selectModel: vi.fn(async () => {}), resolveAgent: vi.fn(resolveDefault), rename: vi.fn(async () => {}),
     prompt: vi.fn(() => { throw new Error('Plugin delivery must not use user RPC') }),
-    inspect: vi.fn(async () => ({ events: [] })),
+    events: vi.fn(async () => ({ records: [], hasMore: false, cursor: 0 })),
   }
   const reader = { read: async () => ({ events: [] }), [Symbol.asyncDispose]: async () => {} }
   const persistence = { flush: vi.fn(async () => {}), open: vi.fn(async () => reader) }
-  const webServer = { host: '127.0.0.1', port: 3082, register: (route: { handler: HttpHandler }) => { http = route.handler; return () => {} } }
+  const webServer = { host: '127.0.0.1', port: 3082, getOrigin: () => 'http://127.0.0.1:3082', register: (route: { handler: HttpHandler }) => { http = route.handler; return () => {} } }
   const jobs = jobRegistry(id => agents.get(id))
   const subagents = subagentRuntime(agents)
   const services = { agents, llm: { resolveCallConfig: vi.fn(async (value: unknown) => value) }, sessionController: controller,

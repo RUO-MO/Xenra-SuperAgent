@@ -1,19 +1,26 @@
 // @vitest-environment jsdom
-// The Trigger status and a Thread.
+// The Threads status and a Thread — both reached from Settings' advanced views rather than a tab of their own.
 import { act } from 'react'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { en, zh } from '../src/client/locales.ts'
-import { usePanel, mount, remount, settle, all, find, click, text, at } from './fixtures/panel.tsx'
+import { usePanel, mount, remount, settle, all, find, tab, click, text, at } from './fixtures/panel.tsx'
 import { server, trigger, threadSummary, ticketSummary } from './fixtures/panel-server.ts'
 
+/** Open the Threads status the way a person does: the Settings tab, then the advanced link that sets `query.view`. */
+const openThreads = async () => {
+  await click(find(zh['tab.settings'], '[role="tab"]'))
+  await click(find(zh['tab.threads'], '.dt-settings-link'))
+}
 usePanel()
 it('walks a Thread timeline newest first with dispositions as tags and its Decisions, requeues a filtered Trigger, pages backwards and returns', async () => {
   await mount()
-  await click(zh['tab.trigger'])
+  await openThreads()
+  expect(tab(zh['tab.settings']).getAttribute('aria-selected')).toBe('true')
   expect(document.querySelector('.dt-ticket .dt-stage')?.textContent).toBe(zh.threadSubscribed)
   expect(text()).toContain('扇出给 修复回归')
   await click('这个文案好奇怪')
-  expect(document.querySelector('.dt-page-head .dt-btn')?.textContent).toBe(zh['term.trigger'])
+  // The Threads view has no tab of its own, so the back button names the Settings tab it was opened from.
+  expect(document.querySelector('.dt-page-head .dt-btn')?.textContent).toBe(zh['tab.settings'])
   expect(text()).not.toContain('扇出到 1 个工单')
   expect(text()).toContain('已过滤：发送者不在这个来源的名单里')
   expect(text()).toContain(zh['term.correlation'])
@@ -29,7 +36,7 @@ it('walks a Thread timeline newest first with dispositions as tags and its Decis
 
 it('offers to send a person\'s message that reached a ticket to Eval, for one its worker neither did nor handed back', async () => {
   await mount()
-  await click(zh['tab.trigger'])
+  await openThreads()
   await click('这个文案好奇怪')
   const event = all('.dt-event').find(element => element.textContent?.includes('message e3'))!
   await click([...event.querySelectorAll<HTMLElement>('button')].find(button => button.textContent === zh.requeue)!)
@@ -38,7 +45,7 @@ it('offers to send a person\'s message that reached a ticket to Eval, for one it
 
 it('filters the Thread list by activity, and unsubscribes from a Thread page after confirmation', async () => {
   await mount()
-  await click(zh['tab.trigger'])
+  await openThreads()
   expect(find(zh['threadFilter.subscribed'], '.dt-pill').getAttribute('aria-pressed')).toBe('true')
   await click(zh['threadFilter.recent'])
   expect(server.requests.some(request => request.path === 'threads?filter=recent&limit=20')).toBe(true)
@@ -56,7 +63,7 @@ it('folds consecutive automated messages from one sender on a Thread, showing th
     timeline: [bot('b1', '2026-09-23T00:00:00Z'), bot('b2', '2026-09-23T00:01:00Z'), trigger('h1', '2026-09-23T00:02:00Z'), bot('b3',
       '2026-09-23T00:03:00Z'), bot('b4', '2026-09-23T00:04:00Z')] })
   await mount()
-  await click(zh['tab.trigger'])
+  await openThreads()
   await click('这个文案好奇怪')
   expect(all('.dt-event .dt-event-text').map(element => element.textContent)).toEqual(['CI of PR #42 at abc1234: 3 checks, 0 failed, 1 running.', 'message h1', 'CI of PR #42 at abc1234: 3 checks, 0 failed, 1 running.'])
   const folds = all('.dt-event').map(event => event.querySelector('button.dt-textlink[aria-expanded]')?.textContent ?? '')
@@ -68,7 +75,7 @@ it('folds consecutive automated messages from one sender on a Thread, showing th
 it('reads the page around a link\'s target once, also for a Trigger the Thread does not have, while it polls the newest page', async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   onTestFinished(() => { vi.useRealTimers() })
-  at({ page: 'trigger', id: 'feishu:oc_1:om_root', query: { trigger: 'gone' } })
+  at({ page: 'threads', id: 'feishu:oc_1:om_root', query: { trigger: 'gone' } })
   await mount()
   await act(async () => { await vi.advanceTimersByTimeAsync(5000) }); await settle()
   expect(server.requests.filter(request => request.path.startsWith('threads/')).map(request => request.path)).toEqual([
@@ -81,7 +88,7 @@ it('shows a follow-up delivered to its Ticket without an Eval, a hand-back with 
     timeline: [trigger('f1', '2026-09-23T00:00:00Z', { disposition: { delivered: true, fanout: ['t1'] } }),
       trigger('f2', '2026-09-23T00:01:00Z', { disposition: { queued: true, fanout: ['t1'], handbacks: [{ ticketId: 't1', title: '修复回归',
         reason: 'Asks for a new page', at: '2026-09-23T00:02:00Z' }] } })] })
-  at({ page: 'trigger', id: 'feishu:oc_1:om_root' })
+  at({ page: 'threads', id: 'feishu:oc_1:om_root' })
   await mount()
   const events = () => all('.dt-event').map(event => [event.querySelector('.dt-event-text')?.textContent,
     [...event.querySelectorAll('.dt-tag')].map(tag => tag.textContent), event.querySelector('.dt-hint')?.textContent])
@@ -118,7 +125,7 @@ it('reads back the Triggers between the newest page and the earlier ones it show
   vi.useFakeTimers({ shouldAdvanceTime: true })
   onTestFinished(() => { vi.useRealTimers() })
   const thread = busyThread(120)
-  at({ page: 'trigger', id: 'feishu:oc_1:om_root' })
+  at({ page: 'threads', id: 'feishu:oc_1:om_root' })
   await mount()
   expect(shown()).toEqual(range(70, 119))
   await click(zh.loadEarlier)
@@ -136,9 +143,10 @@ it('reads back the Triggers between the newest page and the earlier ones it show
 
 it('shows a link\'s target far back with every Trigger after it', async () => {
   busyThread(120)
-  at({ page: 'trigger', id: 'feishu:oc_1:om_root', query: { trigger: 'm10' } })
+  at({ page: 'threads', id: 'feishu:oc_1:om_root', query: { trigger: 'm10' } })
   await mount()
   expect(shown()).toEqual(range(0, 119))
   expect(document.querySelector('.dt-highlight .dt-event-text')?.textContent).toBe('message m10')
   expect(all('button').some(button => button.textContent === zh.loadEarlier)).toBe(false)
 })
+

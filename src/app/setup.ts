@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { UserError } from '../core/index.ts'
 import { SETUP_FIELDS, resolveDeployment, resolveFeishuBot, workerProbe, type Deployment, type Machine } from '../deployment.ts'
-import { agentVariables, applyEnvironment, verifyEnvironment, withoutDirectory, workerBin, writeEnvironment } from '../infra/environment.ts'
+import { agentVariables, verifyEnvironment, withoutDirectory, workerBin, writeEnvironment } from '../infra/environment.ts'
 import type { Settings, SettingsBlock } from '../policy.ts'
 import { SetupError, type SetupProblem } from '../setup.ts'
 
@@ -29,7 +29,6 @@ export class Setup {
   private readonly path: string
   /** Environment variables pointing agent subprocesses at the isolated git config and command shims. */
   private readonly variables: Record<string, string | undefined>
-  private restoreEnvironment?: () => void
   constructor(private readonly host: SetupHost) {
     this.path = withoutDirectory(process.env.PATH ?? '', workerBin(host.machine.stateDir))
     this.variables = agentVariables(host.machine.stateDir)
@@ -67,7 +66,6 @@ export class Setup {
   async blockCommands(blocked: readonly string[]): Promise<void> {
     if (this.resolved) await writeEnvironment(this.resolved, blocked)
   }
-  restore(): void { this.restoreEnvironment?.(); this.restoreEnvironment = undefined }
   /** Probes CLIs the way worker shells run them, using `stateDir` as `cwd` since it exists even before the repository clone is valid. */
   private probe() {
     const { context, machine, lifetime } = this.host
@@ -89,11 +87,12 @@ export class Setup {
       throw new SetupError('environmentFailed', { output: error instanceof Error ? error.message : String(error) })
     }
     await writeEnvironment(resolved, settings.executor.blockedCommands).catch(machineProblem)
-    this.restoreEnvironment = applyEnvironment(this.variables, machine.stateDir, this.path)
-    await verifyEnvironment(resolved, context.subprocess, lifetime).catch((error: unknown) => {
-      this.restore()
-      machineProblem(error)
-    })
+    // The worker environment is handed to each child process, never written into this one. `Commands` and `runAsWorker`
+    // already merge `commandEnvironment` into the environment of every program they start, so the only thing a process-wide
+    // assignment would add is a leak: DSH runs other Sessions — and the operator's own terminals — inside this same process,
+    // and a `GIT_CONFIG_GLOBAL` pointing at the worker's GitHub-only configuration would strip their credential helpers for
+    // every other host, which is exactly what happened when this used to call `applyEnvironment`.
+    await verifyEnvironment(resolved, context.subprocess, lifetime).catch(machineProblem)
     return resolved
   }
 }

@@ -18,7 +18,7 @@ export function TicketLine({ ticket, question, onChanged, context }: {
   return <li className="dt-row dt-link dt-ticket" data-state={question ? status.dot : undefined}>
     <div className="dt-ticket-stage"><StageMark state={status.dot} icon={status.icon} label={status.label} /></div>
     <div className="dt-ticket-body">
-      <div className="dt-row-title"><button type="button" className="dt-open" onClick={() => navigate({ page: 'execution',
+      <div className="dt-row-title"><button type="button" className="dt-open" onClick={() => navigate({ page: 'tickets',
         id: ticket.id })}>{ticket.title}</button></div>
       <div className="dt-row-meta dt-ticket-meta">
         {ticket.threads.map(thread => <ThreadChip key={thread.key} thread={thread} />)}
@@ -57,7 +57,7 @@ export function ThreadLine({ thread, ticketId, context }: { thread: ThreadRow; t
     <div className="dt-ticket-stage"><StageMark state={dot} icon={icon} label={label} /></div>
     <div className="dt-ticket-body">
       <div className="dt-row-title">
-        <button type="button" className="dt-open" title={thread.pollError} onClick={() => navigate({ page: 'trigger',
+        <button type="button" className="dt-open" title={thread.pollError} onClick={() => navigate({ page: 'threads',
           id: thread.key })}>{readableMarkers(t, thread.title)}</button>
       </div>
       <div className="dt-row-quote dt-line">
@@ -81,8 +81,8 @@ export function DecisionLine({ decision }: { decision: DecisionRow }) {
   const mark = decisionMark(t, decision.outcome)
   const preview = readableMarkers(t, decision.preview)
   const reason = decision.reason ? reasonLabel(t, decision.reason) : ''
-  const open = () => decision.ticketId ? navigate({ page: 'execution', id: decision.ticketId })
-    : navigate({ page: 'trigger', id: decision.thread, query: { trigger: decision.triggerIds[0] ?? '' } })
+  const open = () => decision.ticketId ? navigate({ page: 'tickets', id: decision.ticketId })
+    : navigate({ page: 'threads', id: decision.thread, query: { trigger: decision.triggerIds[0] ?? '' } })
   return <li className="dt-row dt-link dt-ticket">
     <div className="dt-ticket-stage"><StageMark state={mark.dot} icon={mark.icon} label={mark.label} /></div>
     <div className="dt-ticket-body">

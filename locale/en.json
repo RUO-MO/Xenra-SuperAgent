@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Xenra-SuperAgent",
-    "description": "Watch one GitHub repository, turn authorized requests into Tickets, and execute each in its own DSH Session."
+    "description": "Watches one GitHub repository, turns authorized requests into tickets, and executes each in its own DSH Session. Open it in the sidebar for attention, sources, policy, execution, and prompts."
   }
 }

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { POSIX } from './fixtures/platform.ts'
 import { Engine, MemoryRepositories, key, type Assessor, type Executor, type Thread, type Ticket, type Trigger } from '../src/core/index.ts'
 import { backfillChat, consumerRetry, feishuKind, feishuTriggerId, feishuRef, feishuTime, feishuTrigger, historyEvent }
   from '../src/sources/feishu.ts'
@@ -1026,7 +1027,8 @@ it('reports GitHub as failing only after the configured number of consecutive fa
   expect(githubKind.schema.parse({})).toEqual({ repository: '', cli: '', pollSeconds: 60, failuresBeforeError: 3, observeIssues: false,
     observePulls: false, observeComments: false, observeCi: false })
 })
-describe('feishu event consumer', () => {
+// The fake bot is a #!/bin/sh script that xecs a sleeper, so these cases need a POSIX host to run it.
+describe.skipIf(!POSIX)('feishu event consumer', () => {
   let dir: string
   let controller: AbortController
   let running: Promise<unknown> | undefined

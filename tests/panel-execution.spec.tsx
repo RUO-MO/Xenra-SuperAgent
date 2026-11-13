@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// The Execution status, a Ticket, and the Execution settings.
+// The Tickets status, a Ticket, and the Execution settings.
 import { act } from 'react'
 import { expect, it } from 'vitest'
 import { en, zh } from '../src/client/locales.ts'
@@ -7,12 +7,12 @@ import { usePanel, mount, remount, all, find, tab, click, type, text, field, at 
 import { MEMBER, server, ticketSummary, threadSummary } from './fixtures/panel-server.ts'
 
 usePanel()
-it('lists Tickets under Execution by who they wait on, with the Executor state and its pause as an action', async () => {
+it('lists Tickets under the Tickets tab by who they wait on, with the Executor state and its pause as an action', async () => {
   server.tickets.open = [ticketSummary(), ticketSummary({ id: 't2', title: '执行中的工单', threads: [{ key: 'github:7',
     source: 'github', title: '#7 x', facts: { number: { value: '#7' }, autoMerge: { label: { zh: '自动合并', en: 'Auto-merge' },
       value: { zh: '已开启', en: 'on' } } } }] })]
   await mount()
-  await click(zh['tab.execution'])
+  await click(tab(zh['tab.tickets']))
   expect(document.querySelector('.dt-status-title')?.textContent).toBe(zh.statusTitle)
   expect(server.requests.some(request => request.path === 'tickets?state=open&limit=20')).toBe(true)
   expect(text()).toContain(zh.executorRunning)
@@ -27,14 +27,15 @@ it('lists Tickets under Execution by who they wait on, with the Executor state a
   // The pause is its own action: an Execution settings draft started before it still saves.
   await click(find(zh['tab.settings'], '.dt-status-head button'))
   expect(tab(zh['tab.settings']).getAttribute('aria-selected')).toBe('true')
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['promptPart.runtime/work'])
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.execution'])
   await type(field<HTMLInputElement>(zh.maxWorkers), '4')
-  await click(tab(zh['tab.execution']))
+  await click(tab(zh['tab.tickets']))
   await click(zh.pauseProcessing)
   await click(zh.confirm)
   expect(server.requests.find(request => request.path === 'executor/pause')).toMatchObject({ method: 'POST', body: { paused: true } })
   expect(text()).toContain(zh.processingPaused)
   expect(find(zh.resumeProcessing).textContent).toBe(zh.resumeProcessing)
+  // The Settings tab reopens at the group that was last open, so the draft from before the pause is still there.
   await click(tab(zh['tab.settings']))
   await click(zh.save)
   expect(server.settings).toMatchObject({ paused: true, executor: { maxWorkers: 4 } })
@@ -71,12 +72,15 @@ it('shows a Ticket with its stage, its Mandate details with the Trigger and Deci
   await click(zh['term.environment'])
   expect(all('.dt-disclosure-body .dt-table tr').map(row => row.textContent)).toEqual(['XENRA_SUPERAGENT_DIR/w/t1',
     'XENRA_SUPERAGENT_GITHUB_NUMBER—'])
+  // The Trigger behind the Mandate opens the Thread at that Trigger; Threads have no tab of their own any more, so the
+  // navigation keeps showing the tab the person came from while the Thread page takes over the body.
   await click(document.querySelector<HTMLElement>('.dt-trigger-link')!)
-  expect(tab(zh['tab.trigger']).getAttribute('aria-selected')).toBe('true')
+  expect(document.querySelector('.dt-page-head')?.textContent).toContain('这个文案好奇怪')
+  expect(server.requests.some(request => request.path.startsWith('threads/feishu:oc_1:om_root'))).toBe(true)
 })
 
 it('reports a missing Ticket instead of rendering an empty page', async () => {
-  at({ page: 'execution', id: 'missing' })
+  at({ page: 'tickets', id: 'missing' })
   await mount()
   expect(document.querySelector('.dt-hint')?.textContent).toBe(zh.ticketNotFound)
 })
@@ -97,8 +101,10 @@ it('links a question to its Channel, folds consecutive automated messages among 
   expect(all('.dt-disclosure-body .dt-row-title').map(title => title.textContent)).toEqual(['自动通知：CI of PR #42 at abc1234: 10 checks, 1 failed, 0 running.'])
   await click('同一发送者之前还有 1 条自动消息')
   expect(text()).toContain('CI of PR #42 at abc1234: 10 checks, 0 failed, 0 running.')
-  await click(zh['tab.eval'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  // The Eval settings hold the field whose explanation is a tooltip rather than inline text.
+  await click(tab(zh['tab.tickets']))
+  await click(tab(zh['tab.settings']))
+  await click(find(zh['settingsGroup.eval'], '.dt-settings-link'))
   expect(text()).not.toContain('到期后记为未完成')
   const tip = field(zh.evalTimeout).closest('.dt-field')!.querySelector<HTMLElement>('.dt-info')!
   await act(async () => { tip.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })) })
@@ -112,7 +118,7 @@ it('offers a Ticket awaiting review its review place and Session in the page hea
   const t1 = server.ticketDetails.t1!
   server.ticketDetails.t1 = { ...t1, stage: 'person', action: 'review', threads: [threadSummary(),
     { ...threadSummary({ key: 'github:42', source: 'github', title: '#42 Fix login' }), url: 'https://github.com/acme/widgets/pull/42' }] }
-  at({ page: 'execution', id: 't1' })
+  at({ page: 'tickets', id: 't1' })
   await mount()
   expect(document.querySelector('.dt-status-line .dt-stage')?.textContent).toBe(zh['stage.review'])
   expect(all('.dt-page-head a').map(link => [link.textContent, link.getAttribute('href')])).toEqual([['打开 GitHub 原文',
@@ -121,7 +127,7 @@ it('offers a Ticket awaiting review its review place and Session in the page hea
 
 it('keeps what a person types in the Execution settings, converting it once on save', async () => {
   await mount()
-  await click(zh['tab.execution'])
+  await click(tab(zh['tab.tickets']))
   await click(find(zh['tab.settings'], '.dt-status-head button'))
   const blocked = () => field<HTMLInputElement>(zh.blockedCommands), root = () => field<HTMLInputElement>(zh.executionDirectory),
     workers = () => field<HTMLInputElement>(zh.maxWorkers)
@@ -142,7 +148,7 @@ it('keeps what a person types in the Execution settings, converting it once on s
 it('says why an Input was not delivered on its Ticket\'s page, in either language', async () => {
   const t1 = server.ticketDetails.t1!
   server.ticketDetails.t1 = { ...t1, stage: 'person', action: 'delivery', deliveryError: 'feishu: message recalled' }
-  at({ page: 'execution', id: 't1' })
+  at({ page: 'tickets', id: 't1' })
   await mount()
   expect(document.querySelector('.dt-status-line .dt-stage')?.textContent).toBe(zh['stage.delivery'])
   expect(document.querySelector('.dt-banner.dt-danger')?.textContent).toBe(`${zh.deliveryFailedPrefix}feishu: message recalled`)
@@ -157,16 +163,16 @@ it('says why an Input was not delivered on its Ticket\'s page, in either languag
 })
 
 it('tells a Ticket or Thread that does not exist from a xenra-superagent that is not answering', async () => {
-  at({ page: 'execution', id: 't9' })
+  at({ page: 'tickets', id: 't9' })
   await mount()
   expect(text()).toContain(zh.ticketNotFound)
   // While xenra-superagent restarts, DSH's web server answers every route with an empty 404.
-  at({ page: 'execution', id: 't1' })
+  at({ page: 'tickets', id: 't1' })
   server.down = true
   await remount()
   expect(text()).not.toContain(zh.ticketNotFound)
   expect(text()).toContain(zh.hostNotRunning)
-  at({ page: 'trigger', id: 'feishu:oc_1:om_root' })
+  at({ page: 'threads', id: 'feishu:oc_1:om_root' })
   await remount()
   expect(text()).not.toContain(zh.threadNotFound)
   expect(text()).toContain(zh.hostNotRunning)
@@ -181,7 +187,7 @@ it('gives a Ticket a bot\'s message started its basis, marks a Thread it follows
   inputs: [{ id: 'i1', kind: 'trigger', triggerId: 'e2', at: '2026-09-22T00:03:00Z', delivered: true, trigger: { id: 'e2',
     actor: { source: 'feishu', id: MEMBER, name: { zh: 'Alice', en: 'Alice' } }, human: true, preview: '顺便加一个页面',
     thread: 'feishu:oc_1:om_root', handback: { reason: 'Asks for a new page', at: '2026-09-22T00:05:00Z' } } }] }
-  at({ page: 'execution', id: 't1' })
+  at({ page: 'tickets', id: 't1' })
   await mount()
   const facts = () => all('.dt-kv > div').map(row => [row.querySelector('dt')?.textContent, row.querySelector('dd')?.textContent])
   expect(facts()).toEqual(expect.arrayContaining([[zh['basis.sender'], '评审机器人'], [zh['basis.bot'], zh.yes], [zh['basis.mode'], zh['mode.auto']]]))
@@ -201,7 +207,7 @@ it('words an ended Ticket by its outcome, on its row and its page, with a person
   server.tickets.ended = [ticketSummary(fields, { stage: 'ended' }), ...server.tickets.ended]
   server.ticketDetails.t3 = { ...server.ticketDetails.t1!, ...fields, stage: 'ended' }
   await mount()
-  await click(zh['tab.execution'])
+  await click(tab(zh['tab.tickets']))
   await click(zh['ticket.ended'])
   expect(all('.dt-ticket-stage').map(stage => stage.textContent)).toEqual([zh['outcome.merged'], zh['outcome.stopped']])
   await click('已合并的工单')
@@ -215,7 +221,7 @@ it('words an ended Ticket by its outcome, on its row and its page, with a person
 })
 
 it('sends one stop for a double click on Confirm', async () => {
-  at({ page: 'execution', id: 't1' })
+  at({ page: 'tickets', id: 't1' })
   await mount()
   await click(zh.stop)
   const confirm = find(zh.confirm)

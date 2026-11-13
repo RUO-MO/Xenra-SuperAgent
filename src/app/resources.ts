@@ -1,5 +1,5 @@
 /** Serves paginated context resources to orchestrator_read so large bodies stay out of model prompts until requested. */
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { UserError, key, latestReport, reached, runningAssignment, threadKey, type Ticket, type Trigger } from '../core/index.ts'
 import { batchOf, inputMessage, triggerMessage, workerSessionId } from '../executor/dsh.ts'
 import { readGithub } from '../sources/github-read.ts'
@@ -111,8 +111,30 @@ async function sourcePage(read: Read, source: string, fetch: () => Promise<unkno
 const THREAD_DECISIONS = 5
 const triggerLine = (trigger: Trigger) => ({ trigger_id: trigger.id, actor: trigger.actor.id, human: trigger.human, at: trigger.at,
   preview: preview(trigger.text), chars: trigger.text.length, read: `trigger/${trigger.id}` })
+/** The most pages of a Session log one transcript read walks, so a very long Session cannot make this read unbounded. */
+const TRANSCRIPT_PAGE_LIMIT = 20
+/**
+ * Read a Session log through DSH's Session Controller as the durable events the panel projects. The Controller pages backwards
+ * and message-aligned, so the walk asks for the page before the oldest record it has and reverses nothing: pages are read
+ * newest first and prepended, leaving chronological order.
+ */
+async function sessionEvents(host: ResourceHost, sessionId: SessionId, signal?: AbortSignal): Promise<SessionEvent[]> {
+  const events: SessionEvent[] = []
+  const address = { kind: 'session' as const, sessionId }
+  const cancellation = signal ?? new AbortController().signal
+  let beforeSeq: number | undefined
+  for (let pages = 0; pages < TRANSCRIPT_PAGE_LIMIT; pages++) {
+    const page = await host.context.sessionController.events({ address, ...(beforeSeq === undefined ? {} : { beforeSeq }) }, cancellation)
+    // The Controller carries the wire envelope; its event half is the durable Session event this projection reads.
+    const records = page.records.map(record => record.event as unknown as SessionEvent)
+    events.unshift(...records)
+    if (!page.hasMore || records.length === 0) break
+    beforeSeq = records[0]!.seq
+  }
+  return events
+}
 async function transcript(host: ResourceHost, ticketId: string) {
-  return (await host.context.sessionController.inspect(workerSessionId(ticketId) as SessionId)).events
+  return sessionEvents(host, workerSessionId(ticketId) as SessionId)
 }
 
 const ROUTES: readonly Route[] = [

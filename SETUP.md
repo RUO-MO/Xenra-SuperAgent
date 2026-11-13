@@ -26,7 +26,8 @@ command -v lark-cli
 grep -l -E 'id: xenra-superagent\b' "${DSH_HOME:-$HOME/.dsh}"/profiles/*/cordis.patch.yml 2>/dev/null
 ```
 
-- **前置条件：** Node.js 22.19+ 或 24+、pnpm、git 2.32+、tmux、Python 3.8+、GitHub CLI 2.48+，以及处于 `package.json` 中 `engines.dsh` 范围内的 DSH。缺哪一项都作为计划里的一个条目处理，而不是变成一个提问。DSH 还需要一个模型服务；如果运营者从没在 DSH 上配过模型，配置它属于运营者步骤。
+- **前置条件：** Node.js 22.19+ 或 24+、pnpm、git 2.32+、tmux、Python 3.8+、GitHub CLI 2.48+，以及处于 `package.json` 中 `engines.dsh`（当前为 `^0.2.2-rc.1`）范围内的 DSH。缺哪一项都作为计划里的一个条目处理，而不是变成一个提问。DSH 还需要一个模型服务；如果运营者从没在 DSH 上配过模型，配置它属于运营者步骤。
+- **平台：** 插件本身在 Linux、macOS 与 Windows 上都可用——包装脚本在 Windows 上写成 `.cmd`，prepare 命令经 `cmd` 运行，路径查找按 PATHEXT 进行。但 `scripts/xenra-superagent`（启停与退出码）需要 tmux 与 `ps`，只在 POSIX 主机上运行。运营者在原生 Windows 上时，把计划里的启停步骤改成直接用 `dsh --profile xenra` 启动，并以 `GET state` 或面板判断就绪；需要脚本那套行为时改用 WSL。
 - **运营者登录名：** `gh api user` 的结果就是运营者自己的 GitHub 登录名，用作问题 5 的推荐值。
 - **已有 profile：** 含 `xenra-superagent` 条目的 profile 属于早先的安装：问运营者是否继续使用它、保留其配置，并阅读 `docs/006-deployment.md` 的升级一节。
 
@@ -54,7 +55,7 @@ grep -l -E 'id: xenra-superagent\b' "${DSH_HOME:-$HOME/.dsh}"/profiles/*/cordis.
 
 有合理默认值的问题不要问，把它们写进计划里：
 
-- profile 名 `xenra`，是 DSH Web profile 的副本，与运营者日常工作的 profile 分开，这样重启它不会关掉运营者的 Session；端口 `3082`；状态目录为绝对路径 `<home>/.dsh/state/xenra-superagent`；
+- profile 名 `xenra`，是 DSH Web profile 的副本，与运营者日常工作的 profile 分开，这样重启它不会关掉运营者的 Session；端口 `3082`；状态目录沿用默认的 `<home>/.dsh/state/xenra-superagent`，除非它必须放在别处；
 - 在运营者自己的 profile 里建一个每小时检查，在 Xenra-SuperAgent 没运行时把它修好；
 - 分支前缀 `agent/`；
 - 接单模式 `observe`，只记录智能体本来会做的主动工作、不实际执行，以及默认的规则和提示词小节；

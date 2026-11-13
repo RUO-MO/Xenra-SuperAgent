@@ -50,6 +50,14 @@ import { executorTools, type ExecutorToolsHost } from './tools/executor.ts'
 // Source plugins interact with xenra-superagent exclusively through the `SourceHost` service interface.
 declare module '@deepseek-ai/cordis' { interface Context { orchestrator: SourceHost } }
 const now = (): string => new Date().toISOString()
+/**
+ * How long the state directory lock stays valid without a refresh, and how often it is refreshed.
+ * The stale window must outlast a synchronous schema migration over a large database, whose event loop cannot refresh it;
+ * a shorter window let another process start and open the same database while the migration still ran.
+ */
+const LOCK_STALE_MS = 120_000
+/** A quarter of the stale window: proper-lockfile requires the refresh to be shorter, and a fourth leaves room for a slow callback. */
+const LOCK_UPDATE_MS = LOCK_STALE_MS / 4
 
 /**
  * Composition root of xenra-superagent that connects `Store`, `Setup`, `Engine`, `SourceRegistry`, `Effects`, `Outbox`, `Passes`, `Sessions`, `Settings`, `Prompts`, `DshExecutor`, and `MasterAssessor`.
@@ -79,6 +87,8 @@ export class Runtime extends Service implements SourceHost {
   private readonly disposers: (() => void)[] = []
   private releaseLock?: () => Promise<void>
   private closingFlag = false
+  /** True once `onCompromised` handled a lost state directory lock, so its one-time shutdown is not started again. */
+  private compromised = false
   private stopping?: Promise<void>
   private readonly sourceDeps: SourceContextDeps
   private readonly toolHost: MainToolsHost & ExecutorToolsHost
@@ -89,8 +99,22 @@ export class Runtime extends Service implements SourceHost {
     const runtime = this
     // Lock the state directory before opening the database so another process cannot migrate or write concurrently.
     mkdirSync(machine.stateDir, { recursive: true, mode: 0o700 })
-    const compromised = (error: Error) => { this.runtimeHealth.set({ state: 'error', detail: error.message }); this.stopped.abort() }
-    const release = lockSync(machine.stateDir, { stale: 30_000, onCompromised: compromised })
+    // A compromised lock means another process may already own the directory: this one must stop writing to the same
+    // SQLite file at once, so it takes the same stop path as a normal shutdown instead of merely aborting the signal,
+    // which left the store open and the effect queue dispatching.
+    const compromised = (error: Error) => {
+      this.runtimeHealth.set({ state: 'error', detail: error.message })
+      // Abort first: whatever `stop` does, running reads and subprocesses are cancelled from here on.
+      this.stopped.abort()
+      // The lock can be reported compromised more than once while shutdown runs; only the first report starts it.
+      if (this.compromised) return
+      this.compromised = true
+      ctx.logger.error('xenra-superagent lost its state directory lock and is stopping: %s', error.message)
+      void this.stop().catch((failure: unknown) => {
+        ctx.logger.error('xenra-superagent could not shut down after losing its lock: %s', String(failure))
+      })
+    }
+    const release = lockSync(machine.stateDir, { stale: LOCK_STALE_MS, update: LOCK_UPDATE_MS, onCompromised: compromised })
     this.releaseLock = async () => { release() }
     let opened: Store | undefined
     try {
@@ -105,7 +129,7 @@ export class Runtime extends Service implements SourceHost {
       store.set(KV.runtime.masterId, masterId)
       const commands = this.commands = new Commands(() => setup.deployment, setup.commandEnvironment, this.lifetime)
       const board = this.board
-      const effects = this.effects = new Effects(store, board)
+      const effects = this.effects = new Effects(store, board, () => Date.now(), ctx.logger)
       const sources = this.sources = new SourceRegistry(() => store.settings(), board, kind => {
         // Sync source member lists once startup completes when a source plugin loads dynamically.
         if (kind.policy?.sync) void this.ready?.then(() => this.settings.syncable().includes(kind.kind) ? this.settings.sync(kind.kind) : undefined)
@@ -223,7 +247,8 @@ export class Runtime extends Service implements SourceHost {
       get deployment() { return setup.deployment },
       get setupProblem() { return setup.problem }, get feishuProblem() { return setup.feishuProblem },
       configured: () => setup.configured(), links: () => runtime.links(), ticketEnvironment: ticket => runtime.ticketEnvironment(ticket),
-      checkSetup: () => { setup.check() }, requestPass: () => { passes.request() }, models: () => this.ctx.sessionController.modelCatalog() }
+      checkSetup: () => { setup.check() }, requestPass: () => { passes.request() }, models: () => this.ctx.sessionController.modelCatalog(),
+      context: this.ctx }
   }
   /** Idempotent stop; concurrent or repeated calls share the same shutdown promise. */
   stop(): Promise<void> { return this.stopping ??= this.shutdown() }
@@ -243,7 +268,6 @@ export class Runtime extends Service implements SourceHost {
       await this.ctx.sessionPersistence.flush()
     } finally {
       // Close the database before releasing the directory lock so another process cannot open the database mid-write; a compromised lock may already be released.
-      this.setup.restore()
       try { this.store.close() } finally {
         const unreleased = (error: unknown) => { this.ctx.logger.warn('xenra-superagent could not release its state directory lock: %s',
           String(error)) }

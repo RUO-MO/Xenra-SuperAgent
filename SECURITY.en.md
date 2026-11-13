@@ -4,7 +4,7 @@
 
 ## Supported versions
 
-This project is a research prototype (see the README), and offers no formal security support window. We still take security reports seriously and fix them on the latest commit when we can.
+Xenra-SuperAgent follows DeepSeek Harness releases: security fixes land on the latest commit corresponding to the running code, for DSH versions inside the `engines.dsh` range in `package.json`. Upgrade first before reporting against a version outside that range.
 
 ## Reporting a vulnerability
 
@@ -23,10 +23,11 @@ We confirm reports as soon as we can, and after a fix ships we will ask whether 
 
 The following are **intended** behavior, not vulnerabilities. They help you judge what is worth reporting:
 
-- **Executors run as the operator's OS user, with `danger-full-access`.** Wrappers and directories are defaults, not a security boundary; an Executor can run a program by absolute path and read the operator's home directory. For isolation, use a dedicated OS account. See "Permissions and isolation" in [docs/006-deployment](docs/006-deployment.en.md).
-- **Prompt text never changes permissions.** Messages, comments and quoted documents are data; the gate, Mandates, tool argument checks and account wrappers are enforced by code. See the precedence section of [docs/004-prompts](docs/004-prompts.en.md).
+- **Executors run as the operator's OS user, with `danger-full-access`.** `stateDir`, the wrappers and the ticket directories are defaults, not a security boundary; an Executor can run a program by absolute path and read the operator's home directory. For isolation, use a dedicated OS account, or run the Executor in its own container or virtual machine.
+- **Prompt text never changes permissions.** Messages, comments and quoted documents are data; admission, authorization, tool argument checks and account wrappers are enforced by code. See the precedence section of [docs/004-prompts](docs/004-prompts.en.md).
+- **The main Session may write policy; an Executor may not.** The main Session holds the tools that change Policy and prompts, because it routes work under a person's Mandate; an Executor gets only the tools its work needs, and loses even those once its Ticket ends. Any channel that can steer the main Session — for example text a permitted GitHub user writes in your repository — is still bounded by the Policy entries, but the **allow list itself** is maintained by a person in Settings.
 - **The management API listens on loopback only**, and requires the `x-orchestrator-request` header with a same-origin `Origin`. Exposing it to a network is a misconfiguration, not a supported use.
-- **Settings saved through the management API have the panel's permissions**, and can change execution environment and account fields.
+- **Settings saved through the management API have the panel's permissions**, and can change execution environment and account fields; any process that can reach the loopback port can do the same.
 
 ## Please do not put these in an issue
 

@@ -13,11 +13,11 @@ interface Jobs {
   kill(id: string, caller: string, reason?: string): unknown
   readonly events: { subscribe(filter: { owner: string }, listener: (event: { type: string }) => void): () => void }
 }
-/** What the Executor uses of DSH's subagents: joining a worker's subagents that work, its subagents, and releasing them. */
+/** What the Executor uses of DSH's subagents: joining a worker's subagents that work, listing its descendants, and releasing them. */
 interface Subagents {
-  waitForChildren(parent: Agent): Promise<boolean>
-  listChildren(parentSessionId: string): Promise<readonly { id: string }[]>
-  drainChildren(parent: Agent, childIds: readonly string[]): Promise<void>
+  waitForTreeWork(root: Agent): Promise<boolean>
+  listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<readonly { id: SessionId; depth: number }[]>
+  drainDescendants(parents: readonly Agent[]): Promise<void>
 }
 /** How long a stop waits for a killed job to end, collecting its end so the worker is not woken to hear of it. */
 const KILL_WAIT_MS = 10_000
@@ -49,7 +49,7 @@ const joins = new WeakMap<Agent, Promise<boolean>>()
 function childrenEnd(subagents: Subagents, agent: Agent): Promise<boolean> {
   let join = joins.get(agent)
   if (!join) {
-    join = subagents.waitForChildren(agent).finally(() => { joins.delete(agent) })
+    join = subagents.waitForTreeWork(agent).finally(() => { joins.delete(agent) })
     joins.set(agent, join)
   }
   return join
@@ -136,15 +136,23 @@ export async function collectJob(ctx: Context, sessionId: string, job: { id: str
 /**
  * Release the worker's live subagents, for a bounded time. DSH delivers each one's end to the worker before the release
  * returns, which wakes it, so the worker's turn is cancelled after, keeping its inbox when `keepInbox`, and the stop ends
- * with that turn. Its Session still admits subagents.
+ * with that turn.
+ *
+ * DSH releases a subagent by draining the tree rooted at it, which also closes that root's admission. Draining the worker
+ * itself would close the worker's own admission, and the worker must keep admitting subagents for the ticket's later
+ * Assignments, so each live descendant is drained as its own root instead: its own parent stops it, and the worker stays
+ * free. A descendant that ended has no agent, and only the shallowest loaded descendants are released, since draining one
+ * releases the tree below it.
  */
 export async function stopSubagents(ctx: Context, agent: Agent, keepInbox = false): Promise<void> {
   const subagents = subagentsOf(ctx)
   if (!subagents) return
-  // The catalog lists every subagent the Session had; one that ended has no agent.
-  const live = (await subagents.listChildren(agent.id)).map(child => child.id).filter(id => ctx.agents.get(id as SessionId))
-  if (!live.length) return
-  try { await until(subagents.drainChildren(agent, live), undefined, DRAIN_LIMIT_MS) }
+  const catalog = await subagents.listDescendants(agent.id).catch(() => [])
+  const loaded = catalog.filter(entry => ctx.agents.get(entry.id))
+  const shallowest = Math.min(...loaded.map(entry => entry.depth))
+  const roots = loaded.filter(entry => entry.depth === shallowest).flatMap(entry => ctx.agents.get(entry.id) ?? [])
+  if (!roots.length) return
+  try { await until(subagents.drainDescendants(roots), undefined, DRAIN_LIMIT_MS) }
   finally {
     if (agent.status !== 'idle') cancelled.add(agent)
     agent.cancel({ kind: 'user' }, { keepInbox })

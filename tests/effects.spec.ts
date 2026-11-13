@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { Effects, Later } from '../src/app/effects.ts'
+import { Effects, Later, MAX_ATTEMPTS, MAX_DEAD_LETTERS } from '../src/app/effects.ts'
 import { Store } from '../src/app/store.ts'
 import { HealthBoard } from '../src/infra/health.ts'
 import { deferred } from './fixtures/async.ts'
@@ -100,6 +100,47 @@ it('retries a failed effect after a delay that doubles up to its maximum, and re
   clock += 3000; await effects.idle()
   expect(health.notice).toMatchObject({ state: 'ready', detail: 'Nothing waiting' })
   expect(effects.pending('notice')).toBe(false)
+})
+
+it('gives up on an effect that keeps failing after MAX_ATTEMPTS, records it once as a dead letter, and shows it in its kind\'s health', async () => {
+  const logger = { error: vi.fn() }
+  const giving = new Effects(store, board, () => clock, logger)
+  giving.start()
+  let fail = true
+  const run = vi.fn(async () => { if (fail) throw new Error('disk is full') })
+  giving.handle('notice', run, { retry: [1000, 1000] })
+  giving.enqueue('notice', 'prompts', { value: { prompt_config_saved: 2 }, summary: 'Prompt configuration saved' })
+  // One attempt at once, then one per retry until MAX_ATTEMPTS.
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) { await giving.idle(); clock += 1000 }
+  expect(run).toHaveBeenCalledTimes(MAX_ATTEMPTS)
+  // Given up on: the row stays but never runs again, and the dead letter keeps what failed for the operator.
+  await giving.idle()
+  expect(run).toHaveBeenCalledTimes(MAX_ATTEMPTS)
+  expect(giving.pending('notice', 'prompts')).toBe(false)
+  expect(giving.deadLetters()).toEqual([{ kind: 'notice', requestId: 'prompts', error: 'Error: disk is full', attempts: MAX_ATTEMPTS, at: expect.any(String) }])
+  expect(logger.error).toHaveBeenCalledOnce()
+  // The overview reads the kind's health, which must not look ready once it stopped retrying.
+  expect(health.notice).toMatchObject({ state: 'error', detail: expect.stringContaining('1 given up on') })
+  expect(health.notice).toMatchObject({ state: 'error', detail: expect.stringContaining('the last failure: Error: disk is full') })
+  // Queued again with a new payload, the request starts a fresh cycle and its old dead letter no longer claims it was lost.
+  fail = false
+  giving.enqueue('notice', 'prompts', { value: { prompt_config_saved: 3 }, summary: 'Prompt configuration saved' })
+  await giving.idle()
+  expect(giving.pending('notice', 'prompts')).toBe(false)
+  expect(giving.deadLetters()).toEqual([])
+  expect(health.notice).toMatchObject({ state: 'ready', detail: 'Nothing waiting' })
+})
+
+it('keeps only the last MAX_DEAD_LETTERS dead letters, oldest first', async () => {
+  const giving = new Effects(store, board, () => clock)
+  giving.start()
+  giving.handle('relay', async () => { throw new Error('offline') }, { retry: [1000, 1000], limit: () => 20 })
+  for (let index = 0; index < MAX_DEAD_LETTERS + 2; index++) giving.enqueue('relay', `k${index}`, relay(`${index}`))
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) { await giving.idle(); clock += 1000 }
+  const letters = giving.deadLetters()
+  expect(letters).toHaveLength(MAX_DEAD_LETTERS)
+  expect(letters[0]!.requestId).toBe('k2')
+  expect(letters.at(-1)!.requestId).toBe(`k${MAX_DEAD_LETTERS + 1}`)
 })
 
 it('starts nothing once drained, keeps what waits and what shutdown cut short, and runs it after the next start', async () => {

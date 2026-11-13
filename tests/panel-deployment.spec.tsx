@@ -12,10 +12,11 @@ usePanel()
 it('saves this machine\'s settings in the Deployment settings through DSH\'s configuration form, without a restart', async () => {
   const { form: editable, mutations } = fakeForm()
   server.form = editable
+  // Deployment is a machine-level group: a deployment problem links to it, and a stored route reopens it.
+  at({ page: 'settings', query: { group: 'deployment' } })
   await mount()
-  await click(tab(zh['tab.settings']))
-  await click(find(zh['settingsGroup.deployment'], '.dt-settings-link'))
-  expect(text()).toContain('/srv/xenra-superagent')
+  // The state directory is the one editable path on this page, so it is an input rather than displayed text.
+  expect(field<HTMLInputElement>(zh.deploymentStateDir).value).toBe('/srv/xenra-superagent')
   // Accounts are on the Source settings; the Plugin Manager page, where those are not at hand, shows them here.
   expect(text()).not.toContain('@agent-bot')
   for (const moved of ['仓库克隆', '工单 worktree 目录', '禁用的命令']) expect(text()).not.toContain(moved)
@@ -28,6 +29,23 @@ it('saves this machine\'s settings in the Deployment settings through DSH\'s con
   expect(document.querySelector('.dt-toast')?.textContent).toBe(zh.saved)
   expect(text()).not.toContain(zh.savedRestarting)
   expect(field<HTMLInputElement>(zh.deploymentContextTimeout).value).toBe('20000')
+})
+
+it('saves a new state directory as a path, refuses a relative one, and says the plugin remounts', async () => {
+  const { form: editable, mutations } = fakeForm()
+  server.form = editable
+  at({ page: 'settings', query: { group: 'deployment' } })
+  await mount()
+  // A path the Host would refuse never reaches the configuration form.
+  await type(field<HTMLInputElement>(zh.deploymentStateDir), 'relative/state')
+  await click(zh.save)
+  expect(document.querySelector('[role="alert"]')?.textContent).toBe(zh.deploymentStateDirInvalid)
+  expect(mutations).toEqual([])
+  // A new absolute directory is saved as the string, not as a number, and the page warns that it remounts.
+  await type(field<HTMLInputElement>(zh.deploymentStateDir), '/srv/xenra-superagent-2')
+  await click(zh.save)
+  expect(mutations).toEqual([{ revision: 1, ops: [{ op: 'set', path: ['stateDir'], value: '/srv/xenra-superagent-2' }] }])
+  expect(document.querySelector('.dt-toast')?.textContent).toBe(zh.deploymentStateDirRestart)
 })
 
 it('keeps a refused Deployment change as a draft, and shows the settings read-only without a writable form', async () => {
@@ -92,6 +110,54 @@ it('renders the Deployment page with the derived accounts in the Plugin Manager,
   expect(text()).toContain(zh.hostNotRunning)
 })
 
+it('offers the machine\'s own git upgrade only when the workers\' git is too old, and shows the command before running it', async () => {
+  // A git new enough says nothing at all: the repair only appears when there is something to repair.
+  at({ page: 'settings', query: { group: 'deployment' } })
+  await mount()
+  expect(text()).not.toContain(zh.gitUpgradeOffer)
+  // An old git names the version actually running, and the command this machine would run.
+  server.git = { version: '2.30.0', outdated: true, minimum: '2.32', plan: { command: 'brew upgrade git', by: 'brew' } }
+  await remount()
+  expect(text()).toContain(zh.gitTooOldNow.replace('{version}', '2.30.0').replace('{minimum}', '2.32'))
+  // Nothing runs on its own: the offer opens a dialog with the command and what it changes.
+  expect(server.requests.some(request => request.path === 'git/upgrade')).toBe(false)
+  await click(zh.gitUpgradeOffer)
+  expect(text()).toContain('brew upgrade git')
+  expect(text()).toContain(zh.gitUpgradeRisk.replace('{by}', 'brew'))
+  expect(text()).toContain(zh.gitUpgradeManual)
+  expect(server.requests.some(request => request.path === 'git/upgrade')).toBe(false)
+  // Confirming runs it once, and a git that moved reports the new version.
+  server.git = { ...server.git, version: '2.44.0', outdated: false }
+  await click(zh.gitUpgradeConfirm)
+  expect(server.requests.filter(request => request.path === 'git/upgrade')).toHaveLength(1)
+  expect(document.querySelector('.dt-toast')?.textContent).toBe(zh.gitUpgraded.replace('{version}', '2.44.0'))
+  await settle()
+  // The repair is gone once the git is new enough.
+  expect(text()).not.toContain(zh.gitUpgradeOffer)
+})
+
+it('reports a git that stayed old, and one whose upgrade command failed, without claiming success', async () => {
+  server.git = { version: '2.30.0', outdated: true, minimum: '2.32', plan: { command: 'winget upgrade --id Git.Git --exact',
+    by: 'winget' } }
+  at({ page: 'settings', query: { group: 'deployment' } })
+  await mount()
+  await click(zh.gitUpgradeOffer)
+  // A command that succeeded but left an older git first on PATH is not a success, and says why in the version's terms.
+  server.gitUpgrade = () => ({ ok: true, output: 'installed', version: '2.31.0', outdated: true })
+  await click(zh.gitUpgradeConfirm)
+  expect(document.querySelector('.dt-toast')?.textContent).toBe(zh.gitStillOld.replace('{version}', '2.31.0'))
+  // A failing command keeps its output on screen instead of a bare toast.
+  server.gitUpgrade = () => ({ ok: false, output: 'winget: access denied', version: '2.30.0', outdated: true })
+  await click(zh.gitUpgradeConfirm)
+  expect(document.querySelector('.dt-toast')?.textContent).toBe(zh.gitUpgradeFailed)
+  expect(text()).toContain('winget: access denied')
+  // A machine with no package manager still names what is needed; it offers no command it cannot run.
+  server.git = { version: '2.30.0', outdated: true, minimum: '2.32' }
+  await remount()
+  expect(text()).toContain(zh.gitNoPlan.replace('{minimum}', '2.32'))
+  expect(text()).not.toContain(zh.gitUpgradeOffer)
+})
+
 it('tells a xenra-superagent that is starting from a browser that cannot write on the Deployment page', async () => {
   const { form: shared, publish } = fakeForm()
   server.form = shared
@@ -105,7 +171,7 @@ it('tells a xenra-superagent that is starting from a browser that cannot write o
   expect(limit().disabled).toBe(true)
   await act(async () => { publish({ status: 'ready' }) })
   expect(limit().disabled).toBe(false)
-  await act(async () => { publish({ mode: 'memory', status: 'unavailable', writable: false }) })
+  await act(async () => { publish({ status: 'ready', writable: false }) })
   expect(text()).toContain(zh.deploymentReadOnly)
 })
 

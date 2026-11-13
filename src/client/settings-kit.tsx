@@ -209,7 +209,7 @@ function RowsField({ field, value, saved, onChange, labels, refreshLabels }: {
       </select>
     }
     return <Input key={column.key} className={column.optional ? undefined : 'dt-mono'} aria-label={localized(t, column.label)}
-      placeholder={localized(t, column.label)}
+      placeholder={column.placeholder ? localized(t, column.placeholder) : localized(t, column.label)}
       required={!column.optional} pattern={column.pattern} spellCheck={false} value={row[column.key] ?? ''}
         onChange={event => change(event.target.value)} />
   }
@@ -262,6 +262,7 @@ export function SourceField({ field, value, saved, fact, onChange, labels, refre
           {Object.entries(labels).sort(byName).map(([option, name]) => <option key={option} value={option}>{name}</option>)}
         </select>
         : <Input value={String(value ?? '')} readOnly={field.readonly} pattern={field.pattern} spellCheck={false}
+          {...field.placeholder ? { placeholder: localized(t, field.placeholder) } : {}}
           onChange={event => onChange(event.target.value)} />}
     </Field>
     case 'fact': return <div className="dt-field">

@@ -1,12 +1,14 @@
 /** Loads packaged built-in skill definitions and prompt templates from disk. */
 import { readFileSync } from 'node:fs'
+import { isAbsolute, join } from 'node:path'
 import { packagePath } from '../infra/paths.ts'
 /**
- * Reads a packaged text file with normalized Unix line endings.
+ * Reads a packaged text file with normalized Unix line endings. A final absolute path is read as given, so a prompt file
+ * outside the package can be read by the same reader the packaged prompts use.
  * @throws Naming the file when it is missing or whitespace-only, because `xenra-superagent` cannot load without it.
  */
 function packaged(...parts: string[]): { path: string; text: string } {
-  const path = packagePath(...parts)
+  const path = isAbsolute(parts.at(-1) ?? '') ? join(parts.at(-1)!) : packagePath(...parts)
   let text: string
   try { text = readFileSync(path, 'utf8').replaceAll('\r\n', '\n') }
   catch (error) {

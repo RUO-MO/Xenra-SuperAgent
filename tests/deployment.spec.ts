@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Config, executable, machineOf, resolveDeployment, resolveFeishuBot, type Machine, type Probe } from '../src/deployment.ts'
 import { gitEnv } from './fixtures/git.ts'
+import { POSIX } from './fixtures/platform.ts'
 
 const exec = promisify(execFile)
 let dir: string
@@ -40,8 +41,9 @@ afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
 vi.setConfig({ testTimeout: 30_000 })
 
 describe('configuration schema', () => {
-  it('requires only the state directory and reads the editable fields through references', () => {
-    expect(() => Config({})).toThrow('stateDir')
+  it('keeps a default state directory so a first install starts, and rejects a relative or home-relative one', () => {
+    // The panel is where a person sets the state directory, so the plugin must start before it is set.
+    expect(Config({}).stateDir).toMatch(/^(?:\/|[A-Za-z]:[\\/])/)
     const read = machineOf(Config({ stateDir: join(dir, 'state') }))
     // Limits are volatile references that the loader updates in place and callers read when used.
     expect({ ...read, promptMaxChars: read.promptMaxChars.get(), admissionContextMaxPages: read.admissionContextMaxPages.get(),
@@ -57,7 +59,7 @@ describe('configuration schema', () => {
 })
 
 describe('setup', () => {
-  it('reads the repository from the GitHub Source and the accounts from their CLIs, skipping the worker shims', async () => {
+  it.skipIf(!POSIX)('reads the repository from the GitHub Source and the accounts from their CLIs, skipping the worker shims', async () => {
     const deployment = await resolveDeployment(machine(), { repository: 'acme/widgets', cli: 'gh' }, probe, path)
     expect(deployment).toMatchObject({ repository: 'acme/widgets', github: { cli: join(dir, 'bin', 'gh'), login: 'Agent-Bot', noreply: '7+Agent-Bot@users.noreply.github.com' } })
     expect(deployment.github).toEqual({ cli: join(dir, 'bin', 'gh'), login: 'Agent-Bot', noreply: '7+Agent-Bot@users.noreply.github.com' })
@@ -65,7 +67,7 @@ describe('setup', () => {
     // A renamed repository is still resolved by its old name; notifications carry GitHub's current full_name.
     expect((await resolveDeployment(machine(), { repository: 'acme/gadgets', cli: 'gh' }, probe, path)).repository).toBe('acme/widgets')
   })
-  it('names what setup needs and where it is set', async () => {
+  it.skipIf(!POSIX)('names what setup needs and where it is set', async () => {
     const needs = (place: string, code: string, values: Record<string, unknown>, github: unknown) =>
       expect(resolveDeployment(machine(), github, probe, path)).rejects.toEqual(setupError(place, code, values))
     const repository = 'acme/widgets'
@@ -83,7 +85,7 @@ describe('setup', () => {
     await needs('github', 'agentCliNoAccount', {}, { repository, cli: program(join(dir, 'bin', 'gh-anonymous'), `echo '{}'`) })
     expect(() => executable('nothing-here', join(dir, 'bin'))).toThrow('nothing-here is not an executable file on PATH')
   })
-  it('reads the Feishu bot from a bot-only lark-cli, or finds none when the Feishu Source names no CLI', async () => {
+  it.skipIf(!POSIX)('reads the Feishu bot from a bot-only lark-cli, or finds none when the Feishu Source names no CLI', async () => {
     expect(await resolveFeishuBot(machine(), {}, probe, path)).toBeUndefined()
     expect(await resolveFeishuBot(machine(), { cli: 'lark-cli' }, probe, path)).toEqual({ cli: join(dir, 'bin', 'lark-cli'), appId: 'cli_bot', brand: 'lark', botId: 'ou_bot', name: 'Widgets Bot' })
     const refuses = async (code: string, values: Record<string, unknown> = {}) => expect(resolveFeishuBot(machine(), { cli: 'lark-cli' }, probe, path)).rejects.toEqual(setupError('feishu', code, values))

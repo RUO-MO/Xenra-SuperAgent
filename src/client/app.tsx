@@ -1,18 +1,18 @@
 /** Root panel shell: header with global search and glossary, top-level navigation tabs, and active route view. */
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import type { SearchView } from './api.ts'
+import { usePoll, type SearchView } from './api.ts'
 import { Button, Dot, Icon, Input, Modal, SegmentedTabs } from './controls.tsx'
 import type { DeploymentForm } from './deployment.tsx'
 import { EvalStatus } from './eval.tsx'
 import { ExecutionStatus } from './execution.tsx'
 import { ticketMark } from './marks.ts'
 import { GLOSSARY, GLOSSARY_VALUES, en, zh, type XenraSuperagentKey } from './locales.ts'
-import { OverviewPage } from './overview.tsx'
+import { HomePage } from './home.tsx'
 import { PanelProvider, usePanel, usePanelData } from './provider.tsx'
 import { HOME, TABS, initialLocation, lastSettingsGroup, remember, routeLabel, settingsRoute, type Location, type Route,
   type Tab } from './route.ts'
 import { SettingsPage } from './settings.tsx'
-import { SourceStatus } from './source.tsx'
+import { needsGuide, SetupGuide } from './setup-wizard.tsx'
 import { actorName, errorText, reasonLabel, valueLabel, type T, readableMarkers } from './text.ts'
 import { ThreadPage } from './thread.tsx'
 import { TicketPage } from './ticket.tsx'
@@ -28,7 +28,7 @@ function Glossary({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = usePanel()
   const chinese = t('tab.overview') === zh['tab.overview']
   const [own, other] = chinese ? [zh, en] : [en, zh]
-  const heading = (group: keyof typeof GLOSSARY) => t(group === 'roles' ? 'glossaryGroup.roles' : `tab.${group}`)
+  const heading = (group: keyof typeof GLOSSARY) => t(`glossaryGroup.${group}`)
   return <Modal className="dt-glossary-modal" open={open} onClose={onClose} title={t('glossary')} closeLabel={t('close')}
     description={t('glossaryIntro')} footer={<Button variant="primary" onClick={onClose}>{t('close')}</Button>}>
     <div className="dt-glossary-body">
@@ -79,17 +79,17 @@ function SearchResults({ result, query, onClose }: { result: SearchView; query: 
     </div>
     {!empty && <ul className="dt-list">
       {result.tickets.map(ticket => <Result key={ticket.id} name={<Highlight text={ticket.title} query={query} />}
-        open={go({ page: 'execution', id: ticket.id })}>
+        open={go({ page: 'tickets', id: ticket.id })}>
         <span>{t('term.ticket')}</span><span>{ticket.stage === 'ended' ? t('ticket.ended') : ticketMark(t, ticket).label}</span>
       </Result>)}
-      {result.threads.map(thread => <Result key={thread.key} name={readableMarkers(t, thread.title)} open={go({ page: 'trigger',
+      {result.threads.map(thread => <Result key={thread.key} name={readableMarkers(t, thread.title)} open={go({ page: 'threads',
         id: thread.key })}>
         <span>{t('term.thread')}</span>
       </Result>)}
       {/* Filtered triggers have no Thread and display their filter reason instead of a link. */}
       {result.items.map(item => <Result key={item.id} name={<Highlight text={readableMarkers(t, item.preview) || t('empty')}
         query={query} />}
-        open={item.filtered === undefined ? go({ page: 'trigger', id: item.threads[0]!, query: { trigger: item.id } }) : undefined}>
+        open={item.filtered === undefined ? go({ page: 'threads', id: item.threads[0]!, query: { trigger: item.id } }) : undefined}>
         <span>{valueLabel(t, 'source', item.source)}</span><span>{actorName(t, item.actor)}</span><When at={item.at} />
         {item.threadTitle && <span className="dt-ellipsis">{t('inThread', { thread: readableMarkers(t, item.threadTitle) })}</span>}
         {item.filtered !== undefined && <span>{t('searchFiltered', { reason: reasonLabel(t, item.filtered) })}</span>}
@@ -138,22 +138,35 @@ function Header({ masterId }: { masterId: string | undefined }) {
   </header>
 }
 
-function Pages({ route, openTab, deploymentForm }: { route: Route; openTab: (tab: Tab) => void; deploymentForm: DeploymentForm }) {
-  const { t } = usePanel()
+function Pages({ route, openTab, deploymentForm, guideDone, onGuideDone }: {
+  route: Route; openTab: (tab: Tab) => void; deploymentForm: DeploymentForm
+  guideDone: boolean; onGuideDone: () => void
+}) {
+  const { t, call } = usePanel()
   const { state, error, reload } = usePanelData()
   // Keep the active tab scrolled into view on narrow screens when routes change via links.
-  useEffect(() => { document.getElementById(`dt-tab-${route.page}`)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }) }, [route.page])
+  useEffect(() => { document.getElementById(`dt-tab-${tabOf(route)}`)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }) }, [route])
   const waiting = error ? <p className="dt-error" role="alert">{error.message}</p> : <p className="dt-hint">{t('loading')}</p>
+  // A first installation has nothing configured, so it opens on the guide instead of an empty Home. The check runs once, when
+  // the settings first arrive: the guide writes three of the four things it tests for, so re-checking as it saves would close
+  // it before its last step. It leaves only through its own `完成` or skip, or when this page is reopened.
+  const { data: settings } = usePoll(() => state ? call('GET settings') : Promise.resolve(undefined), [state !== undefined])
+  const github = settings?.sources.find(source => source.id === 'github')
+  const [guiding, setGuiding] = useState<boolean | undefined>(undefined)
+  useEffect(() => {
+    if (guiding !== undefined || !state || !settings) return
+    setGuiding(needsGuide({ setup: state.setup, settings }, github))
+  }, [guiding, state, settings, github])
+  const guide = guiding === true && !guideDone
   const page = (() => {
+    if (guide) return <SetupGuide onDone={onGuideDone} />
     switch (route.page) {
-      case 'overview': return <OverviewPage />
-      case 'source': return <SourceStatus />
-      case 'trigger': return route.id !== undefined ? <ThreadPage key={route.id} id={route.id} target={route.query?.trigger} />
-        : <TriggerStatus filter={route.query?.filter ?? 'subscribed'} />
-      case 'eval': return <EvalStatus filter={route.query?.filter ?? 'work'} window={route.query?.window}
-        paused={!!state?.paused} />
-      case 'execution': return route.id !== undefined ? <TicketPage key={route.id} id={route.id} />
+      case 'home': return <HomePage />
+      case 'tickets': return route.id !== undefined ? <TicketPage key={route.id} id={route.id} />
         : state ? <ExecutionStatus filter={route.query?.filter ?? 'open'} state={state} reload={reload} /> : waiting
+      case 'threads': return route.id !== undefined ? <ThreadPage key={route.id} id={route.id} target={route.query?.trigger} />
+        : <TriggerStatus filter={route.query?.filter ?? 'subscribed'} />
+      case 'evals': return <EvalStatus filter={route.query?.filter ?? 'work'} window={route.query?.window} paused={!!state?.paused} />
       case 'settings': return state ? <SettingsPage key={state.masterId} group={route.query.group} query={route.query} state={state}
         deploymentForm={deploymentForm} /> : waiting
     }
@@ -162,16 +175,26 @@ function Pages({ route, openTab, deploymentForm }: { route: Route; openTab: (tab
     <div className="dt-column">
       <Header masterId={state?.masterId} />
       {error && state && <p className="dt-error" role="status">{error.message}</p>}
-      <SegmentedTabs className="dt-tabs" label={t('pagesLabel')} value={route.page} onChange={openTab}
-        items={TABS.map(value => ({ value, label: t(`tab.${value}`), id: `dt-tab-${value}`, panelId: 'dt-page' }))} />
-      <main id="dt-page" role="tabpanel" aria-labelledby={`dt-tab-${route.page}`} className="dt-main">{page}</main>
+      {!guide && <SegmentedTabs className="dt-tabs" label={t('pagesLabel')} value={tabOf(route)} onChange={openTab}
+        items={TABS.map(value => ({ value, label: t(`tab.${value}`), id: `dt-tab-${value}`, panelId: 'dt-page' }))} />}
+      <main id="dt-page" role="tabpanel" aria-labelledby={`dt-tab-${tabOf(route)}`} className="dt-main">{page}</main>
     </div>
   </div>
 }
 
+/**
+ * The tab a route belongs to. The advanced views are reached from Home and Settings rather than a tab of their own, so
+ * the navigation keeps showing the tab a person came from.
+ */
+const tabOf = (route: Route): Tab => route.page === 'home' ? 'home' : route.page === 'tickets' ? 'tickets'
+  : route.page === 'settings' ? 'settings' : 'home'
+
 /** Root panel component managing route history and shared panel state. */
 export function App({ t, openSession, deploymentForm }: AppProps) {
   const [location, setLocation] = useState(initialLocation)
+  // Once the guide is finished or dismissed, it stays out of the way for this page's lifetime; the Home page links back to it
+  // while the installation still has nothing configured.
+  const [guideDone, setGuideDone] = useState(false)
   useEffect(() => { remember(location) }, [location])
   // Preserve the last opened settings group across navigation so the Settings tab reopens at it.
   const move = useCallback((next: (current: Location) => Pick<Location, 'route' | 'stack'>) =>
@@ -181,8 +204,9 @@ export function App({ t, openSession, deploymentForm }: AppProps) {
     stack: replace ? current.stack : [...current.stack, current.route].slice(-20) })), [move])
   const back = useCallback(() => move(current => ({ route: current.stack.at(-1) ?? HOME, stack: current.stack.slice(0, -1) })), [move])
   const openTab = useCallback((tab: Tab) => move(current => ({ stack: [], route: tab === 'settings'
-    ? settingsRoute(lastSettingsGroup(current)) : { page: tab, id: undefined } })), [move])
+    ? settingsRoute(lastSettingsGroup(current)) : tab === 'tickets' ? { page: 'tickets', query: {} } : { page: 'home' } })), [move])
   return <PanelProvider t={t} openSession={openSession} navigate={navigate} back={back} backLabel={routeLabel(t, location.stack.at(-1) ?? HOME)}>
-    <Pages route={location.route} openTab={openTab} deploymentForm={deploymentForm} />
+    <Pages route={location.route} openTab={openTab} deploymentForm={deploymentForm} guideDone={guideDone}
+      onGuideDone={() => setGuideDone(true)} />
   </PanelProvider>
 }

@@ -3,7 +3,7 @@ import { bindScopeParent } from '@deepseek-ai/dsh-scope'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { DatabaseSync } from 'node:sqlite'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
@@ -13,6 +13,7 @@ import { evalsHealth } from '../src/app/views/overview.ts'
 import { mandateInstructions } from '../src/executor/dsh.ts'
 import { masterPrompt } from '../src/app/context.ts'
 import { reference, testMachine } from './fixtures/deployment.ts'
+import { POSIX, WINDOWS } from './fixtures/platform.ts'
 import type { Machine } from '../src/deployment.ts'
 import { SCHEMA_VERSION, Store } from '../src/app/store.ts'
 import { TextCache } from '../src/app/cache.ts'
@@ -29,6 +30,7 @@ import { commentTrigger, githubChannel } from '../src/sources/github-trigger.ts'
 import { IM_WORDS } from '../src/infra/text.ts'
 import { observePull, pullOf } from '../src/sources/github-pull.ts'
 import { credentialHelper, workerGitConfig } from '../src/infra/environment.ts'
+import { pathKey, pathValue, shellCommand } from '../src/infra/platform.ts'
 import { policyHistory } from '../src/app/settings-history.ts'
 import { overview } from '../src/app/views/overview.ts'
 import { preview, readable } from '../src/app/views/text.ts'
@@ -39,7 +41,7 @@ let runtime: Runtime
 const viewsOf = (value: Runtime) => ({ store: value.store, sources: value.sources, links: value.links() })
 const overviewOf = (value: Runtime) => overview(viewsOf(value), value.health, policyVersion(value.store.settings()), executorLoad(value.store, value.executor.activeCount()), value.setupProblem ?? value.feishuProblem)
 let directory: string
-let controller: { create: ReturnType<typeof vi.fn>; selectModel: ReturnType<typeof vi.fn>; resolveAgent: ReturnType<typeof vi.fn>; rename: ReturnType<typeof vi.fn>; prompt: ReturnType<typeof vi.fn>; inspect: ReturnType<typeof vi.fn> }
+let controller: { create: ReturnType<typeof vi.fn>; selectModel: ReturnType<typeof vi.fn>; resolveAgent: ReturnType<typeof vi.fn>; rename: ReturnType<typeof vi.fn>; prompt: ReturnType<typeof vi.fn>; events: ReturnType<typeof vi.fn> }
 type RegisteredTool = { name: string; output: { render: (args: unknown, result: unknown) => unknown }; execute: (args: unknown, execution: { signal: AbortSignal }) => Promise<unknown> }
 let tools: Map<string, Map<string, RegisteredTool>>
 type Section = { name: string; text: (context: { signal?: AbortSignal }) => string; interpolate?: boolean }
@@ -85,8 +87,9 @@ const OTHER = () => join(directory, 'other-gh')
 const BOT = () => join(directory, 'lark-bot')
 const HELPERS = 'git config -z --show-origin --get-all credential.https://github.com.helper'
 const SCOPED = 'git config -z --show-scope --get-regexp ^(credential\\..*|http\\..*extraheader)$'
-const subprocess = { spawn: vi.fn((spec: { argv: readonly string[] }) => {
-  // Strip leading `env` and `KEY=VALUE` arguments before looking up the command response.
+const subprocess = { spawn: vi.fn((spec: { argv: readonly string[]; env?: NodeJS.ProcessEnv }) => {
+  // Read the command the child runs: a leading `env` and its `KEY=VALUE` arguments, kept for the fake calls made before the
+  // probe started passing its directory list in `env`.
   const argv = [...spec.argv]
   while (argv[0] === 'env' || /^[A-Z_]+=/.test(argv[0] ?? '')) argv.shift()
   const answer = answers[argv.join(' ')] ?? ''
@@ -136,6 +139,11 @@ async function acceptedTicket(trigger = feishu('1', '@bot 修一下回归')) {
 }
 beforeEach(async () => {
   directory = mkdtempSync(join(tmpdir(), 'orchestrator-runtime-'))
+  // Each case starts with no worker environment applied. A previous case can leave `GIT_CONFIG_GLOBAL` pointing at its own
+  // temporary `worker-gitconfig` — a Runtime of that case that never stopped, or an installation of this plugin running in
+  // the process the tests share — and a case that asserts the environment was restored needs a known starting point.
+  delete process.env.GIT_CONFIG_GLOBAL
+  delete process.env.GIT_CONFIG_NOSYSTEM
   vi.spyOn(Commands.prototype, 'gh').mockImplementation(async args => args[1] === 'user' ? { login: 'agent-bot' } : args[1]?.includes('/pulls/') ? { state: 'open', user: { login: 'agent-bot' }, html_url: 'https://github.com/acme/widgets/pull/' + args[1].split('/').at(-1), head: { ref: `agent/${String(runtime.store.tickets.list()[0]?.execution?.name)}`, sha: 'head-1', repo: { full_name: 'acme/widgets' } } } : { default_branch: 'master', permissions: { push: true } })
   vi.spyOn(Commands.prototype, 'lark').mockResolvedValue({ users: [{ member_id: MEMBER, name: 'Alice' }], has_more: false })
   vi.spyOn(Commands.prototype, 'git').mockResolvedValue('')
@@ -200,10 +208,11 @@ beforeEach(async () => {
     }),
     selectModel: vi.fn(async () => {}), resolveAgent: vi.fn(async id => agents.has(id) ? { agent: agents.get(id) } : { error: { code: 'session/not-found' } }), rename: vi.fn(async () => {}),
     prompt: vi.fn(() => { throw new Error('Plugin delivery must not use user RPC') }),
-    inspect: vi.fn(async () => ({ events: [] })),
+  // The transcript read pages through the Session log, which these cases never exercise: an empty page is enough.
+    events: vi.fn(async () => ({ records: [], hasMore: false, cursor: 0 })),
   }
   jobs = jobRegistry()
-  services = { agents, llm: { resolveCallConfig: vi.fn(async value => value) }, sessionController: controller, sessionPersistence: { flush: vi.fn(async () => {}), open: vi.fn(async () => ({ read: async () => ({ events: [] }), [Symbol.asyncDispose]: async () => {} })) }, workspaceRegistry: { create: async (cwd: string) => ({ id: cwd }) }, permissionPresets: { set: () => {} }, subprocess, webServer: { host: '127.0.0.1', port: 3082, register: (route: { handler: HttpHandler }) => { http = route.handler; return () => {} } }, jobs: jobs.service }
+  services = { agents, llm: { resolveCallConfig: vi.fn(async value => value) }, sessionController: controller, sessionPersistence: { flush: vi.fn(async () => {}), open: vi.fn(async () => ({ read: async () => ({ events: [] }), [Symbol.asyncDispose]: async () => {} })) }, workspaceRegistry: { create: async (cwd: string) => ({ id: cwd }) }, permissionPresets: { set: () => {} }, subprocess, webServer: { host: '127.0.0.1', port: 3082, getOrigin: () => 'http://127.0.0.1:3082', register: (route: { handler: HttpHandler }) => { http = route.handler; return () => {} } }, jobs: jobs.service }
   for (const [name, service] of Object.entries(services)) ctx.reflect.provide(name, service)
   for (const cli of [AGENT(), OTHER(), BOT()]) writeFileSync(cli, '#!/bin/sh\n', { mode: 0o755 })
   const store = new Store(join(directory, 'orchestrator.sqlite')); seed(store); store.close()
@@ -849,11 +858,11 @@ it('reports each setup problem where the operator fixes it, and checks the agent
   answers[`${AGENT()} api repos/acme/widgets --jq {name: .full_name, push: .permissions.push}`] = '{"name":"acme/widgets","push":false}\n'
   await needs('github', 'repositoryReadOnly', { account: 'agent-bot', repository: 'acme/widgets' })
   answers[`${AGENT()} api repos/acme/widgets --jq {name: .full_name, push: .permissions.push}`] = '{"name":"acme/widgets","push":true}\n'
-  // The agent CLI runs in the workers' environment: without the shims on PATH.
-  const check = subprocess.spawn.mock.calls.map(([spec]) => spec.argv).find(argv => argv.includes(AGENT()))!
-  expect(check[0]).toBe('env')
-  expect(check[1]!.startsWith('PATH=')).toBe(true)
-  expect(check[1]!.slice('PATH='.length).split(':')).not.toContain(join(directory, 'worker-bin'))
+  // The agent CLI runs in the workers' environment: without the shims on the directory list, which the probe passes in
+  // the child's environment rather than through an `env` helper program a Windows host has no equivalent of.
+  const probe = subprocess.spawn.mock.calls.map(([spec]) => spec).find(spec => spec.argv.includes(AGENT()))!
+  expect(probe.argv[0]).toBe(AGENT())
+  expect(probe.env?.[pathKey()]?.split(delimiter)).not.toContain(join(directory, 'worker-bin'))
   const valid = { ...answers }
   // git older than 2.32 ignores GIT_CONFIG_GLOBAL and reads the operator's configuration.
   answers = { ...valid, [HELPERS]: 'file:/home/me/.gitconfig\0!gh auth git-credential\0' }
@@ -970,24 +979,35 @@ it('runs setup again while the Feishu bot check failed, and restores the process
   expect(process.env.PATH?.split(':')).not.toContain(join(directory, 'worker-bin'))
 })
 
+// The shims and the worker git configuration take a platform-specific form, so the assertions follow the platform too.
 it('writes worker shims and the agent environment from the configuration only, and restores the environment on stop', async () => {
   const bin = join(directory, 'worker-bin')
-  expect(readdirSync(bin).sort()).toEqual(['gh', 'lark-cli'])
-  expect(readFileSync(join(bin, 'lark-cli'), 'utf8')).toContain(`exec '${BOT()}'`)
+  // A POSIX host gets script shims named after the command; Windows gets batch files, which a command finds by extension.
+  const name = (command: string): string => WINDOWS ? `${command}.cmd` : command
+  expect(readdirSync(bin).sort()).toEqual([name('gh'), name('lark-cli')].sort())
+  expect(readFileSync(join(bin, name('lark-cli')), 'utf8')).toContain(BOT())
   runtime.store.saveSettings({ ...runtime.store.settings(), executor: { ...runtime.store.settings().executor, blockedCommands: ['personal-gh'] } })
   const next = await restart({}, { feishu: null })
   await next.ready
-  expect(readdirSync(bin).sort()).toEqual(['gh', 'lark-cli', 'personal-gh'])
-  expect(readFileSync(join(bin, 'personal-gh'), 'utf8')).toContain('personal-gh is blocked in this installation; use gh, which acts as agent-bot.')
-  expect(readFileSync(join(bin, 'lark-cli'), 'utf8')).toContain('lark-cli is unavailable: this installation has no Feishu bot.')
-  expect(readFileSync(join(bin, 'gh'), 'utf8')).toContain(`exec '${AGENT()}'`)
-  expect(readFileSync(workerGitConfig(directory), 'utf8')).toContain(`[credential "https://github.com"]\n\thelper = "${credentialHelper(AGENT())}"`)
-  expect(process.env).toMatchObject({ GIT_CONFIG_GLOBAL: workerGitConfig(directory), GIT_CONFIG_NOSYSTEM: '1' })
+  expect(readdirSync(bin).sort()).toEqual([name('gh'), name('lark-cli'), name('personal-gh')].sort())
+  expect(readFileSync(join(bin, name('personal-gh')), 'utf8')).toContain('personal-gh is blocked in this installation; use gh, which acts as agent-bot.')
+  expect(readFileSync(join(bin, name('lark-cli')), 'utf8')).toContain('lark-cli is unavailable: this installation has no Feishu bot.')
+  expect(readFileSync(join(bin, name('gh')), 'utf8')).toContain(AGENT())
+  // The credential helper names the agent's CLI; a Windows path reaches git's `sh` with forward slashes. Only github.com is
+  // redirected: emptying the helper list would strip the credentials of every other host the machine can reach.
+  const helper = credentialHelper(WINDOWS ? AGENT().replaceAll('\\', '/') : AGENT()).replaceAll('\\', '\\\\')
+  const config = readFileSync(workerGitConfig(directory), 'utf8')
+  expect(config).toContain(`[credential "https://github.com"]\n\thelper = "${helper}"`)
+  expect(config).not.toContain('[credential]\n\thelper =')
+  // The worker environment is handed to each child, never assigned to this process: DSH runs other Sessions and the
+  // operator's terminals in it, and a process-wide GIT_CONFIG_GLOBAL breaks their credentials for every other host.
+  expect(process.env.GIT_CONFIG_GLOBAL).toBeUndefined()
+  expect(process.env.GIT_CONFIG_NOSYSTEM).toBeUndefined()
   expect(process.env.GIT_AUTHOR_NAME).toBeUndefined()
-  expect(process.env.PATH?.split(':')[0]).toBe(bin)
+  expect(pathValue().split(delimiter)).not.toContain(bin)
   await next.stop()
   expect(process.env.GIT_CONFIG_GLOBAL).toBeUndefined()
-  expect(process.env.PATH?.split(':')).not.toContain(bin)
+  expect(pathValue().split(delimiter)).not.toContain(bin)
 })
 
 it('waits for setup when the shim directory holds a file xenra-superagent did not write, and leaves the file alone', async () => {
@@ -1002,11 +1022,13 @@ it('waits for setup when the shim directory holds a file xenra-superagent did no
 
 it('rewrites the blocked-command shims when the Executor settings change them, without a restart', async () => {
   const bin = join(directory, 'worker-bin')
+  // A shim is named after its command on a POSIX host and carries `.cmd` on Windows, which finds it by its extension.
+  const shim = (command: string): string => WINDOWS ? `${command}.cmd` : command
   const save = (blockedCommands: string[]) => runtime.settings.save('executor', { ...runtime.store.settings().executor, blockedCommands }, runtime.store.blockRevision('executor'), 'panel')
   expect(await save(['personal-gh'])).toMatchObject({ saved: true, restarting: false })
-  expect(readdirSync(bin).sort()).toEqual(['gh', 'lark-cli', 'personal-gh'])
+  expect(readdirSync(bin).sort()).toEqual([shim('gh'), shim('lark-cli'), shim('personal-gh')].sort())
   await save([])
-  expect(readdirSync(bin).sort()).toEqual(['gh', 'lark-cli'])
+  expect(readdirSync(bin).sort()).toEqual([shim('gh'), shim('lark-cli')].sort())
   // The commands workers need cannot be blocked.
   await expect(save(['gh'])).rejects.toThrow()
   expect(restarts).not.toHaveBeenCalled()
@@ -1078,17 +1100,19 @@ it('leaves auto-merge to the delivery requirements, with the agent\'s own gh and
 
 it('runs the prepare command once for a new ticket, under the execution root with the ticket\'s environment, and fails the ticket with its output', async () => {
   const prepare = (command: string) => runtime.store.saveSettings({ ...runtime.store.settings(), executor: { ...runtime.store.settings().executor, prepare: command } })
-  const runs = () => subprocess.spawn.mock.calls.map(([spec]) => spec as { argv: string[]; cwd: string; env?: Record<string, string> }).filter(spec => spec.argv[0] === 'sh')
+  // The prepare command runs through the platform shell: `cmd /d /s /c` on Windows, `sh -c` elsewhere.
+  const shell = shellCommand('x')
+  const runs = () => subprocess.spawn.mock.calls.map(([spec]) => spec as { argv: string[]; cwd: string; env?: Record<string, string> }).filter(spec => spec.argv[0] === shell[0])
   prepare('git -C /srv/widgets worktree add "$XENRA_SUPERAGENT_DIR" -b "agent/$XENRA_SUPERAGENT_NAME"')
   const { ticket } = await acceptedTicket()
-  expect(runs()).toEqual([expect.objectContaining({ argv: ['sh', '-c', 'git -C /srv/widgets worktree add "$XENRA_SUPERAGENT_DIR" -b "agent/$XENRA_SUPERAGENT_NAME"'], cwd: join(directory, 'work'),
+  expect(runs()).toEqual([expect.objectContaining({ argv: shellCommand('git -C /srv/widgets worktree add "$XENRA_SUPERAGENT_DIR" -b "agent/$XENRA_SUPERAGENT_NAME"'), cwd: join(directory, 'work'),
     env: expect.objectContaining({ XENRA_SUPERAGENT_DIR: ticket.execution!.directory, XENRA_SUPERAGENT_NAME: ticket.execution!.name, XENRA_SUPERAGENT_GITHUB_REPOSITORY: 'acme/widgets', XENRA_SUPERAGENT_FEISHU_CHAT: CHAT }) })])
   // A retry reuses the prepared directory.
   await runTool(`worker-${ticket.id}`, 'orchestrator_report', { state: 'failed', summary: 'offline' })
   await runtime.engine.retryTicket(ticket.id)
   await runtime.idle()
   expect(runs()).toHaveLength(1)
-  answers['sh -c exit 3'] = new Error('fatal: no such clone')
+  answers[shellCommand('exit 3').join(' ')] = new Error('fatal: no such clone')
   prepare('exit 3')
   const failed = await acceptedTicket(feishu('9', '@bot 修一下标题'))
   await runtime.idle()
@@ -1560,7 +1584,7 @@ it('refuses an ended ticket\'s worker its tools, and restricts the main Session 
   expect(guards.get(sessionId)!()).toBeUndefined()
   runtime.engine.stopTicket(ticket.id)
   expect(guards.get(sessionId)!()).toBe('Ticket ended; new work needs a new authorized ticket')
-  expect(restricts.get(runtime.masterId)).toEqual([{ allow: ['skill', 'bash', 'read', 'read_image', 'job_output', 'job_list', 'job_kill'] }])
+  expect(restricts.get(runtime.masterId)).toEqual([{ allow: ['skill', 'read', 'read_image', 'job_output', 'job_list', 'job_kill'] }])
   // A worker keeps only the profile's work tools: none that ask a person, change the profile, schedule or start work outside
   // the worker slots, reach other Sessions or edit documents, whenever they were registered.
   expect(restricts.get(sessionId)).toEqual([{ allow: ['read', 'read_image', 'grep', 'bash', 'job_output', 'job_list', 'job_kill', 'web_search', 'skill'] }])
@@ -1597,16 +1621,16 @@ it('runs a launch that fails for a passing reason again on the launch backoff th
     controller.resolveAgent.mockImplementation(original)
   }
   // A prepare command whose output names a passing failure is not run again on its own.
-  const runs = () => subprocess.spawn.mock.calls.filter(([spec]) => (spec as { argv: string[] }).argv[0] === 'sh').length
+  const runs = () => subprocess.spawn.mock.calls.filter(([spec]) => (spec as { argv: string[] }).argv[0] === shellCommand('x')[0]).length
   runtime.store.saveSettings({ ...runtime.store.settings(), executor: { ...runtime.store.settings().executor, prepare: 'exit 3' } })
-  answers['sh -c exit 3'] = new Error('fatal: unable to access: The requested URL returned error: 503')
+  answers[shellCommand('exit 3').join(' ')] = new Error('fatal: unable to access: The requested URL returned error: 503')
   const before = runs()
   const prepared = await acceptedTicket(feishu('40', '@bot 修 prepare', { root_id: undefined }))
   await runtime.idle()
   expect(runtime.store.tickets.get(prepared.ticket.id)!.assignments.at(-1)!.report).toMatchObject({ state: 'failed', summary: expect.stringContaining('503') })
   expect(runs()).toBe(before + 1)
   // A retry runs the prepare command again, for the directory it left empty was removed; resuming relaunches no failed launch.
-  delete answers['sh -c exit 3']
+  delete answers[shellCommand('exit 3').join(' ')]
   runtime.executor.resume()
   await runtime.idle()
   expect(runs()).toBe(before + 1)
@@ -1618,12 +1642,12 @@ it('runs a launch that fails for a passing reason again on the launch backoff th
 
 it('launches a queued Assignment once when the host resumes, and gives a failed launch\'s slot back', async () => {
   runtime.store.saveSettings({ ...runtime.store.settings(), executor: { ...runtime.store.settings().executor, maxWorkers: 1, prepare: 'exit 3' } })
-  answers['sh -c exit 3'] = new Error('fatal: no such clone')
+  answers[shellCommand('exit 3').join(' ')] = new Error('fatal: no such clone')
   const failed = await acceptedTicket(feishu('50', '@bot 修 一', { root_id: undefined }))
   await runtime.idle()
   expect(runtime.store.tickets.get(failed.ticket.id)!.assignments.at(-1)!.report).toMatchObject({ state: 'failed' })
   // The failed launch holds no slot: the next ticket launches in the only one.
-  delete answers['sh -c exit 3']
+  delete answers[shellCommand('exit 3').join(' ')]
   const next = await acceptedTicket(feishu('51', '@bot 修 二', { root_id: undefined }))
   await runtime.idle()
   expect(runtime.store.tickets.get(next.ticket.id)!.assignments.at(-1)).toMatchObject({ state: 'running' })

@@ -2,37 +2,75 @@
 
 [中文](006-deployment.md) · English
 
-Use this guide to install, configure and operate xenra-superagent. It covers accounts, startup checks, upgrades and troubleshooting, building on [001 Domain model](001-domain.en.md) through [005 Panel](005-panel.en.md).
+This guide covers operations: what runs on a machine, which accounts it needs, how to install it, how to start and stop it, how to upgrade it, and where to look first when something breaks. For concepts, read [001 Domain model](001-domain.en.md) through [005 Panel](005-panel.en.md); this document only puts them on a machine.
 
 ## What runs
 
-- **A dedicated DeepSeek Harness profile**, called `xenra` in this guide. Create it from the Web profile template. It loads the bundle and serves its panel on `127.0.0.1`. Keep it separate from the profile you work in: the plugin changes process-wide `PATH` and git settings, and its process needs independent restarts and upgrades.
-- **An agent GitHub account.** The agent comments, pushes branches and opens pull requests as this account, through a GitHub CLI signed in only as that account.
-- **Optional:** a Feishu bot for chat requests.
+Xenra-SuperAgent ships as a DeepSeek Harness bundle. Its `cordis.patch.yml` inserts three plugin rows and two agent-preset rows into a profile's entry list, and otherwise leaves the host alone.
 
-Plugin configuration holds the state directory and machine limits. Use the panel for everything else: Sources for the repository and accounts, Policy for allowed lists, and Execution for worker directories and commands.
+### Plugin rows
+
+| Entry id | Plugin | Loads |
+| --- | --- | --- |
+| `xenra-superagent` | `xenra-superagent` | The application itself: Store, Engine, Source registry, Executor, management routes and the panel |
+| `xenra-superagent-github` | `xenra-superagent/github-watch` | The GitHub Source kind and its polling loop |
+| `xenra-superagent-feishu` | `xenra-superagent/feishu-watch` | The Feishu Source kind and its loops, on by default and idle until it has a bot CLI |
+
+The bundle supplies all three rows; a profile's `cordis.patch.yml` only has to give the main row a `stateDir`, as "Machine configuration" describes.
+
+The main plugin injects the host's `agents`, `sessionController`, `sessionPersistence`, `workspaceRegistry`, `permissionPresets`, `tools`, `systemPrompt`, `skills`, `webServer`, `llm` and `subprocess`, and turns off the DeepSeek Harness generated settings page, because the panel brings its own settings interface.
+
+### Agent presets and Sessions
+
+The bundle inserts two `@deepseek-ai/dsh-agent-preset` rows as well, defining the two presets this application uses:
+
+| Preset id | Name | Who runs under it |
+| --- | --- | --- |
+| `xenra-superagent-worker` | Xenra-SuperAgent 执行器 | Every Ticket's Executor Session, whose id is `worker-<ticket id>` |
+| `xenra-superagent-router` | Xenra-SuperAgent 主 Session | The main Session, whose id is stored under `KV.runtime.masterId` and derived from `stateDir` on first start |
+
+Both appear in the DeepSeek Harness preset list, and no setting hides them from the picker, so their names and descriptions say whom they are for. Do not select them for personal Sessions, and do not delete the rows: a Session records the preset id it was created with and looks that id up when it resumes, so a missing preset fails the resume with `agent-preset/not-found`.
+
+The presets differ in two ways. In tools: an Executor Session gets files, search, the shell and its jobs, the web, skills, its todo list and subagents, while the main Session gets only `skill`, `read`, `read_image` and the three job tools, with no shell, writes, search or web. In the role prefix: the worker carries a persona, `You are a coding agent powered by the {{model}} model.`, and the main Session has none, because its prompt is complete on its own (`complete: true`). Both presets move a foreground shell command and a job wait to the background after 5 seconds, so a long command does not hold back the next step. When the Web UI opens a new, empty Session, the host may select the profile's default preset first; before the first turn, `Sessions` selects the role's preset back.
 
 ### Permissions and isolation
 
-The bundle defines `xenra-superagent-worker` for Executors and `xenra-superagent-router` for the main Session. They appear in the DeepSeek Harness preset list but are intended only for xenra-superagent. Do not select them for personal Sessions or disable their configuration rows. The application needs them to create and resume its Sessions.
+Sessions created under either preset run as the operator's OS user and are set to `danger-full-access`. Nothing the application writes is a security boundary:
 
-Opening a blank managed Session in the Web UI can select the profile's default preset. xenra-superagent restores its role-specific preset before the first turn.
+- The shims in `<stateDir>/worker-bin` make `gh` and `lark-cli` act as the agent and make blocked commands fail by name; calling one by absolute path still runs it.
+- `<stateDir>/worker-gitconfig` points only the github.com credential helper at the agent's CLI; it constrains where configuration comes from, not the process.
+- **It does not change any git configuration your machine already had.** Every write stays inside `<stateDir>`: it does not touch your global `~/.gitconfig`, the system configuration, or any repository's own configuration, and it writes nothing into the host process's environment. Credentials for other hosts — codeup, GitLab, a company mirror — therefore keep working, and so do the other Sessions in DSH and your own terminals.
+- The Executor reads its own `worker-gitconfig`, which carries no empty `[credential] helper` line: emptying that list strips the helper of **every** host at once. It redirects github.com alone and leaves every other host to the helpers the machine already has. It also ignores the system git configuration, so a system-wide helper cannot answer for github.com on the agent's behalf and hand over the operator's own token.
+- A Ticket's execution directory separates Tickets by directory alone; it isolates no permissions.
 
-Both presets run with `danger-full-access` as the operator's OS user and read messages from subscribed Threads. Account wrappers choose the agent's credentials by default; they do not isolate the process. A worker can execute programs by path and read the operator's home directory. For isolation, use a dedicated OS account containing only the agent's credentials.
+An Executor can run any program by path and read the operator's home directory. For real isolation, give the agent a dedicated OS account holding only its own credentials.
 
 ## Prerequisites
 
-- Node.js 22.19+ or 24+, pnpm, git 2.32+, Python 3.8+ and tmux
-- GitHub CLI (`gh`) 2.48 or later. Source CLI fields must point to `gh` or `lark-cli` wrappers; the host relies on their subcommands and output formats.
-- A repository on github.com; GitHub Enterprise Server is not supported. To create a checkout per Ticket, keep a local clone from which the prepare command can add worktrees. Install `git-lfs` if that repository uses Git LFS.
-- A model provider configured for DeepSeek Harness. xenra-superagent uses the profile's default model unless the Eval or Execution settings name another.
-- For Feishu: `lark-cli` (tested with 1.0.90) and a Feishu or Lark app with a bot
+- Node.js `^22.19.0` or `>=24`, pnpm, git 2.32 or later, GitHub CLI (`gh`) 2.48 or later.
+- DeepSeek Harness within `engines.dsh`, currently `^0.2.2-rc.1`; the build and tests in this repository use `0.2.2-rc.2`.
+- A model provider configured for DeepSeek Harness. Both roles use the profile's default model unless the Eval or Execution settings name another.
+- Python 3 and tmux: `scripts/xenra-superagent` is a Python script that runs the service in tmux and finds the process with `ps`.
+- A repository on github.com. GitHub Enterprise Server is not supported: the git configuration and every API call are hard-wired to github.com and paths on it.
+- To give each Ticket a checkout, keep a local clone from which the prepare command can add worktrees; install `git-lfs` if the repository uses Git LFS.
+
+**The plugin itself works on Windows.** Everything platform-specific is answered in one place, `src/infra/platform.ts`:
+
+- **The shims** (`gh`, `lark-cli`, a blocked command) are written as `.cmd` batch files on Windows rather than `#!/bin/sh` scripts, because Windows cannot execute a shell script and finds a command by its PATHEXT extension. Both forms carry the same marker, so a shim left by the other platform is replaced rather than rejected.
+- **The prepare command** runs through `cmd /d /s /c`, so it is written in `cmd` syntax rather than `sh` syntax.
+- **The setup probes** pass the directory list in the child's environment instead of prefixing the command with an `env` program.
+- **Executable lookup** tries `.exe`, `.com`, `.bat`, `.cmd` and `.ps1` on Windows, so `gh` finds `gh.exe` or `gh.cmd`.
+- **The worker git configuration** writes the `!` helper's path with forward slashes on Windows, because Git for Windows runs that helper through its own `sh`.
+
+What remains POSIX-only is **`scripts/xenra-superagent`**: it is a Python script that carries the service in tmux, finds it with `ps`, and stops it with SIGINT. On Windows, start `dsh --profile <name>` directly and judge readiness from `GET state` or the panel; run the script inside WSL when you want its start/stop behaviour and exit codes.
+
+`tests/fixtures/platform.ts` records that boundary: cases needing a `#!/bin/sh` wrapper, `tmux`, `ps` or a `chmod` permission bit are skipped on Windows with `it.skipIf`, and the rest — including Windows' own shim and shell forms — run as usual.
 
 ## Accounts
 
 ### Agent GitHub account
 
-1. Create a GitHub user account for the agent and give it write access to the repository. A GitHub App cannot be the agent, because xenra-superagent reads the account's notifications.
+1. Create a GitHub user account for the agent and give it write access to the repository. A GitHub App cannot be the agent: the application reads that account's notifications, and only a user account has that feed.
 2. Give it a GitHub CLI that uses only its own credentials:
 
    ```sh
@@ -46,11 +84,13 @@ Both presets run with `danger-full-access` as the operator's OS user and read me
    gh-agent api user --jq .login
    ```
 
-   Sign in as the agent account; the last command prints its login. xenra-superagent reads the login the same way.
+   Sign in as the agent account; the last command prints its login. The application reads the login the same way and, with it, the account id, using `<id>+<login>@users.noreply.github.com` as the commit email in the execution environment.
+
+   Saving the Source settings calls `repos/<owner>/<name>` and requires `permissions.push` to be true; when it is false the answer is "@… cannot push to …". Write access therefore has to exist before the save.
 
 ### Feishu bot (optional)
 
-1. Create a self-built app with the bot capability. Grant it the permissions to receive message events, read and send chat messages, and read chat members, then publish the app version.
+1. Create a self-built app with the bot capability, grant it permission to receive message events, read and send chat messages, and read chat members, then publish the app version.
 2. Give the bot its own `lark-cli` configuration, restricted to the bot identity, and a wrapper:
 
    ```sh
@@ -64,53 +104,86 @@ Both presets run with `danger-full-access` as the operator's OS user and read me
    chmod +x ~/.local/bin/lark-bot
    ```
 
-   The first command reads the app secret from standard input. Use a separate configuration directory: `lark-cli` allows one profile per app id, and your personal configuration may already contain a user login for that app.
+   The first command reads the app secret from standard input. Use a separate directory: `lark-cli` allows one profile per app id, and your personal configuration may already contain a user login for that app.
 
-   The host refuses a CLI that can act as a user. It reads the app id, Feishu/Lark brand and bot `open_id` from the bot configuration.
+   The application accepts the bot identity only. Setup reads `auth status` (`appId` shaped `cli_…`, `brand` `feishu` or `lark`, `identities.bot.status` equal to `ready`), `config strict-mode` (`strict-mode: bot` in its output) and the `open_id` that `/open-apis/bot/v3/info` returns. When any of them fails, the Feishu Source stays on that problem and everything else runs.
 
    Both configurations share the keychain entry for the app secret. To remove only the bot configuration, delete its directory; do not run `lark-cli config remove`, which would affect the shared secret.
 
 ## Install
 
-Run this block once, on a machine that has no `xenra` profile yet:
+Run this once, on a machine that has no `xenra` profile yet:
 
 ```sh
-npm install -g @deepseek-ai/dsh@0.2.1-rc.3
+npm install -g @deepseek-ai/dsh@0.2.2-rc.2
 git clone <this repository> xenra-superagent && cd xenra-superagent
 pnpm install && pnpm build
 dsh xenra --from-default-profile web --dump-config > /dev/null
 dsh plugin --profile xenra add "link:$PWD"
 ```
 
-The pinned version above is public; other versions must satisfy `engines.dsh` in `package.json`.
+The first command installs a DeepSeek Harness that satisfies `engines.dsh`; another version works too, as long as it falls within `^0.2.2-rc.1`.
 
-The fourth command creates `~/.dsh/profiles/xenra` from the DeepSeek Harness Web template. The fifth installs this bundle. Set `DSH_HOME` to relocate the default `~/.dsh` directory.
+The fourth command creates `~/.dsh/profiles/xenra` from the DeepSeek Harness Web template; `DSH_HOME` relocates that default directory. Use it for a new installation only: when the profile already exists it replaces the profile and deletes its `cordis.patch.yml`, machine configuration included. Do not run it for an upgrade.
 
-Run the profile-creation command only for a new installation. If the profile already exists, that command replaces it and deletes its `cordis.patch.yml`, including machine configuration. Do not use it for upgrades.
+The fifth installs this repository into that profile as a `link:`, so a rebuild takes effect on the spot. Installing the same package through the DeepSeek Harness plugin manager works as well and has the same effect. The repository commits the built `lib/`, so a `link:` install needs no build; rerun `pnpm build` only after changing `src/`.
+
+Add the machine configuration (next section) before starting.
 
 ## Machine configuration
 
-Copy [examples/profile.cordis.patch.yml](../examples/profile.cordis.patch.yml) to `~/.dsh/profiles/xenra/cordis.patch.yml`, replacing that file, and replace every `<placeholder>`. For Feishu, also enable the `xenra-superagent-feishu` entry there. The `webserver` entry sets the panel's port.
+Copy [examples/profile.cordis.patch.yml](../examples/profile.cordis.patch.yml) to `~/.dsh/profiles/xenra/cordis.patch.yml` and replace every `<placeholder>` in it. The example sets both the Web server and the state directory:
 
-| Key | Required | Meaning |
-| --- | --- | --- |
-| `stateDir` | yes | Absolute path: the database, the lock, the command shims in `worker-bin`, the agent's git configuration and, by default, the Ticket directories in `work`. Back it up before upgrades |
-| `promptMaxChars`, `admissionContextMaxPages`, `admissionContextTimeoutMs` | no | The largest saved prompt configuration, and how many Thread pages one assessment reads within what time |
+```yaml
+- id: webserver
+  config:
+    host: 127.0.0.1
+    port: 3082
+- id: xenra-superagent
+  config:
+    stateDir: /home/me/.dsh/state/xenra-superagent
+```
 
-After the first start, edit machine limits in **Settings → Deployment** or the DeepSeek Harness Plugin Manager. Changes apply without restart. `stateDir` cannot be changed there. Invalid values or unknown configuration keys prevent startup; the log identifies the key.
+The management API requires the Web server to bind `127.0.0.1`; on any other address the plugin refuses to start. The port is free, and the example uses 3082, which is also the address `scripts/xenra-superagent` checks health at by default. With another port the panel and the new address still agree (the page uses relative paths), but the script needs `--url` or `XENRA_SUPERAGENT_URL` to follow it, or it treats the running service as unreachable and exits 1.
+
+The keys of the `xenra-superagent` row:
+
+| Key | Required | Default | Meaning |
+| --- | --- | --- | --- |
+| `stateDir` | no | `<home>/.dsh/state/xenra-superagent` | Absolute path: the database, the lock, the command shims in `worker-bin`, the agent's git configuration and, by default, the Ticket directories under `work` |
+| `promptMaxChars` | no | `100000` | The largest saved prompt configuration, 1000 to 1000000 |
+| `admissionContextMaxPages` | no | `10` | Thread pages one assessment may read, 1 to 100 |
+| `admissionContextTimeoutMs` | no | `15000` | Time limit of one context read during an assessment, 1 to 90000 milliseconds |
+
+`stateDir` defaults to `<home>/.dsh/state/xenra-superagent`, so a freshly installed plugin starts and is then configured from its panel — that panel is the surface that would set this key, and a plugin that refused to start without it would leave nowhere to set it. Changing it means a different state, and the plugin remounts. In the panel it sits under **Settings › Deployment**, a group with no entry in the navigation on the left: open it from a **System problem** on Home, from this plugin's page in the DeepSeek Harness plugin manager, or edit the profile's `cordis.patch.yml` directly.
+
+The three limits and `stateDir` are all edited under **Settings › Deployment**, which is the same page the DeepSeek Harness plugin manager opens. The limits are volatile and take effect as soon as they are saved; a new `stateDir` remounts the plugin, the page says so, and it shows the new location a few seconds later.
+
+An unknown configuration key stops startup, and the log names it and says where the old key moved: `repository` and `github` are on the GitHub Source now, `branchPrefix` and `repositoryPath` in the prepare command of the Execution settings, `worktreeRoot` is the directory root there, `blockedCommands` in the Execution settings, and `author` is prompt text. Back up `stateDir` before an upgrade.
+
+The Feishu Source is on by default and needs no configuration file edit: it stays idle until it has a bot CLI. After installing, put that CLI on the Feishu card under **Settings → Sources** and it starts working. Turn it off in the same file only when you do not want it at all:
+
+```yaml
+- id: xenra-superagent-feishu
+  disabled: true
+```
 
 ## Start and stop
 
 ```sh
 scripts/xenra-superagent start
 scripts/xenra-superagent status
+scripts/xenra-superagent restart
+scripts/xenra-superagent stop
 ```
 
-`start` runs `dsh --profile xenra` in tmux session `dsh-xenra`, or `dsh-<profile>` for another profile. It waits up to one minute for the runtime to become ready or report a setup requirement. On a first run it prints the missing setup information. It refuses duplicate instances, including ones started outside this script.
+`start` runs `dsh --profile <profile> --no-open` in tmux session `dsh-<profile>`, with the checkout root as its working directory. It waits up to one minute (`--timeout`) for the runtime to reach `ready` or `paused`. It refuses duplicate instances: two service processes for one profile are an error, including one started outside this script, and so is a URL where an instance already answers.
 
-`stop` and `restart` request graceful shutdown and wait up to five minutes for Executors. They never force-kill the process or touch other tmux sessions.
+`stop` sends the service process `SIGINT` and waits up to 300 seconds (`--stop-timeout`) for shutdown to finish. It never force-kills, and it does not touch other tmux sessions. `restart` is that same stop followed by a start.
 
-`status` prints process ids, health and setup problems. For a different profile or port, use `--profile` and `--url`, or set `XENRA_SUPERAGENT_PROFILE` and `XENRA_SUPERAGENT_URL`.
+`status` prints a JSON object: `pids`, `cwd`, `url`, `manually_stopped`, `health` (one state per part), `errors` (the parts in `error` with their details), and `setup` and `feishu` (the configuration still missing).
+
+For a different profile or port, use `--profile` and `--url`, or set `XENRA_SUPERAGENT_PROFILE` and `XENRA_SUPERAGENT_URL`.
 
 `status`, `start` and `restart` exit with one of four codes:
 
@@ -118,95 +191,103 @@ scripts/xenra-superagent status
 | --- | --- |
 | 0 | The service runs normally |
 | 1 | It does not run, runs twice, does not answer, or its runtime reports an error; a restart may fix it |
-| 2 | It runs, but a part other than the runtime, such as a Source or a Policy sync (`sync:<source id>`), reports an error; a restart does not fix it |
+| 2 | It runs, but a part other than the runtime reports an error, such as a Source or a policy sync (`sync:<source id>`); a restart does not fix it |
 | 3 | It runs and waits for setup; a restart does not fix it |
 
-A Source that is still starting counts as normal operation. So does a Feishu bot that setup could not check.
+A Source that is still starting counts as normal operation, and so does a Feishu bot that setup could not check. A failure of any effect kind, or an Executor incident, counts as 2.
 
-`status` returns failed parts and their details under `errors`, and setup requirements under `setup`. `start` and `restart` print those problems as lines; they exit 1 if the service never comes up. Only an intentional `stop` pauses automatic recovery.
+Every run leaves files under `.artifacts/` in the checkout root:
 
-Each profile stores logs and control files under `.artifacts/`:
+- Startup logs `xenra-superagent-<profile>-<date>-<time>-<script pid>.log`; only the newest 20 are kept.
+- The control directory `control/profiles/<profile>/`, holding the stop marker `manually-stopped`, `service.pid` and the operation lock `operation.lock`.
 
-- Startup logs: `xenra-superagent-<profile>-<date>-<time>-<pid>.log`, where the pid belongs to the script. The newest 20 are kept.
-- Control files: `control/profiles/<profile>/`, containing the stop marker, lock and process id.
+Open the URL the log prints, then choose **Xenra-SuperAgent** in the sidebar: a fresh installation lands on the **first-run guide** first, and on **Home** once it is configured. The DeepSeek Harness plugin manager also lists this plugin, and opening it shows the same Deployment page.
 
-Open the URL printed in the log, then choose **Xenra-SuperAgent** in the sidebar.
+When the service process is shut down, a running Executor finishes its current step first; the next start treats the interrupted Assignment as one that an interruption cut short, as [003 Execution](003-execution.en.md) describes.
 
-### Hourly check
+## Hourly check
 
-Create the hourly check in the DeepSeek Harness profile you normally use, not in `xenra`. It must keep running when the agent service is down. Ask an agent in that profile to create an hourly schedule using this prompt, with the checkout path filled in:
+Schedule this check in the DeepSeek Harness profile you work in, not in `xenra`: it has to keep running while the agent service is down. Ask an agent in that profile to create an hourly schedule with the prompt below, filling in the checkout path:
 
 ```text
-Check xenra-superagent: run `scripts/xenra-superagent --profile xenra status` in <checkout>. Exit 0: do nothing and say nothing. Exit 2: do not restart; tell me each part under `errors` with its detail, unless you already told me about the same ones. Exit 3: do not restart; tell me what `setup` says setup needs, unless you already told me. If it reports manually_stopped: true, leave it stopped. Otherwise (exit 1) run `scripts/xenra-superagent --profile xenra --respect-stop restart`, which exits the same way: 0 means it recovered, so say nothing; 2 and 3 are reported as above; if it exits 1 or fails otherwise, read the newest .artifacts/xenra-superagent-xenra-*.log and the Troubleshooting section of docs/006-deployment.md, fix what you can, and tell me what was wrong and what you did.
+Check Xenra-SuperAgent: run `scripts/xenra-superagent --profile xenra status` in <checkout>. Exit 0: do nothing and say nothing. Exit 2: do not restart; tell me each part under `errors` with its detail, unless you already told me about the same ones. Exit 3: do not restart; tell me what `setup` says setup needs, unless you already told me. If it reports manually_stopped: true, leave it stopped. Otherwise (exit 1) run `scripts/xenra-superagent --profile xenra --respect-stop restart`, which exits the same way: 0 means it recovered, so say nothing; 2 and 3 are reported as above; if it exits 1 or fails otherwise, read the newest .artifacts/xenra-superagent-xenra-*.log and the Troubleshooting section of docs/006-deployment.md, fix what you can, and tell me what was wrong and what you did.
 ```
 
-`--respect-stop` preserves an intentional stop. Only `stop` writes the marker; `start` clears it. `restart` writes no marker, so the check can recover a restart whose shutdown timed out.
+The prompt does four things only: stay silent when all is well, report a failing part to a person, report what setup still needs, and restart only when the process is gone, then report the outcome. It never brings the service back after an intentional stop.
+
+`--respect-stop` preserves an intentional stop. Only `stop` writes the marker; `start` clears it, and so does the start inside `restart`. An automatic check after a `stop` therefore stays quiet until someone runs `start` explicitly, and a marker left by a `restart` whose shutdown timed out is cleared by that restart's own start, so the check can retry it safely.
 
 ## Settings
 
-Setup must succeed before polling or work starts. Overview lists missing requirements and links to their settings. A settings change runs setup again. If you fix something outside the application, such as CLI authentication, choose **Check again**.
+Until setup succeeds, polling, assessment and dispatch do not start. A fresh installation opens the panel on the **first-run guide** rather than an empty Home: four steps ask which repository to watch and which account acts (saved together, because the Source checks push permission at once), whether to receive Feishu too (skippable), who may ask, and where work happens; each saves at once, and the guide can be skipped for later configuration in Settings, as [005 Panel](005-panel.en.md) describes. When setup has a problem, **System problems** on Home names what is missing, each row linking to the setting that fixes it; a deployment-level problem (the state directory, git, the execution environment) belongs to this machine, does not enter the guide, and shows on Home alone.
 
-1. **Sources.** Set the GitHub repository (`owner/name`) and agent CLI, for example `/home/me/.local/bin/gh-agent`. Requests normally arrive through the agent account's notifications. A new Issue or comment mentioning the account arrives on the next poll; adding a mention by editing an existing Issue body does not. Post a new comment instead. For Feishu, set the bot CLI, chats, each chat's receive-all or mentions-only mode, and whether to receive direct messages.
-2. **Policy.** The two example rules can be edited or removed. Under **On each Source**, add the GitHub accounts and Feishu users who may ask for work; until a list has someone, no request can become a Ticket. With Feishu, a chat can be chosen to sync the list from, at startup and on **Sync now**.
-3. **Execution.** The directory root and a prepare command. To give each Ticket a checkout of the repository:
+The panel has three tabs — **Home**, **Tickets**, **Settings** — and the settings page has four everyday groups: Sources, Eval, Execution and Prompts. The Deployment group has no entry in the navigation; a person reaches it from a system problem on Home, or through DeepSeek Harness's plugin manager. Policy is not a group of its own: its rules, each Source's list and the admission table live under **Eval**. A change runs setup again; when you fixed something outside the application (signing in a CLI, upgrading git), choose **Check again** to rerun setup — and setup refuses that when it has nothing to fix (`Setup is complete`).
+
+1. **Sources.** The group opens with each Source's state, its arrived and filtered counts for the last 24 hours, the Triggers it filtered and the messages it did not send, then the cards that configure it. Set the GitHub repository (`owner/name`) and the agent CLI, for example `/home/me/.local/bin/gh-agent`. Requests normally arrive through the agent account's notifications: new Issues and comments mentioning the account arrive on the next poll, while a mention added by editing an Issue body does not; post a new comment instead. The four receive-everything switches are off by default; with one on, new Issues, new pull requests, comments and default-branch CI that do not mention the agent are received too, and the admission table decides whether they may become candidates. For Feishu, set the bot CLI, the chats (each receive-all or mentions-only), other chats and whether to receive direct messages.
+
+   Saving the repository or an account field runs an account check and then restarts the application; the panel is briefly unavailable during the restart.
+
+2. **Eval.** Policy first, then the Eval settings. **Policy**: the two example rules can be edited or removed; under **On each Source**, add the GitHub accounts and Feishu users who may originate work, and while a list is empty no request can become a Ticket; the admission table decides strength by receiving scope, whether the sender is on the list, and whether the message addresses the agent, as [002 Authorization](002-authorization.en.md) describes; a bot on the bot list can only produce inferred candidates. With Feishu, the list can be synced from a chat, at startup and on **Sync now**, and a failed sync appears under `sync:feishu` and retries with a backoff from a minute to an hour. **Eval settings**: the accept mode (off, observe, auto), the time limit of one Eval (30 to 600 seconds) and the assessor model.
+
+3. **Execution.** The directory root, the prepare command, the concurrency (1 to 16) and the blocked commands. To give each Ticket a checkout of the repository:
 
    ```sh
    git -C /home/me/src/widgets fetch --no-tags "https://github.com/$XENRA_SUPERAGENT_GITHUB_REPOSITORY.git" "${XENRA_SUPERAGENT_GITHUB_PR_HEAD:-HEAD}:refs/xenra-superagent/$XENRA_SUPERAGENT_TICKET" &&
    git -C /home/me/src/widgets worktree add -b "agent/$XENRA_SUPERAGENT_NAME" "$XENRA_SUPERAGENT_DIR" "refs/xenra-superagent/$XENRA_SUPERAGENT_TICKET"
    ```
 
-   List personal CLIs, such as one signed in to your own account, as blocked commands.
-4. **Prompts.** Set the team sections: the GitHub disclosure line, review bots, the commit author and the auto-merge condition.
+   A blocked command makes calls to that name fail inside the Executor, which keeps your own account's CLI out of reach; `gh`, `git` and `lark-cli` cannot be blocked. The directory root and the prepare command can only be changed in the panel; the main Session's tools cannot change them.
 
-### Management API
+4. **Prompts.** Edit the team sections (communication, Ticket scope, delivery requirements), the built-in parts and the skills. A built-in part has default text, and an edit records which version it was edited from; when an upgrade changes the default it is marked **Default updated**. What changes here is what the agent is told, not what it may do: tool permissions, admission and the account shims live elsewhere.
 
-The panel uses a local HTTP API that agents can also call. `SETUP.md` uses it to save settings, and the service script reads `GET state`.
+5. **Deployment.** No navigational entry: reached from a system problem on Home, or from this plugin's page in the plugin manager. It shows any setup problem with **Check again**, `stateDir` and the three limits. A limit change takes effect at once. The DeepSeek Harness plugin manager opens the same page.
 
-Send requests to `http://127.0.0.1:<port>/orchestrator/api/` with `x-orchestrator-request: 1`. The host must be `127.0.0.1:<port>` or `localhost:<port>`. Missing headers or an `Origin` from another site receive 403.
+## Management API
 
-API saves have the panel's permissions. They can change execution environment and setup account fields, unlike saves made through the main Session's tools.
+The panel talks to an HTTP API on the loopback interface, and agents and the service script can call it too: `scripts/xenra-superagent status` reads `GET state`, and the flow in `SETUP.md` saves settings blocks with `PUT`.
 
-Agents may rely on these routes and fields. The other routes in `src/app/api.ts` serve the panel and change with it.
+Send requests to `http://127.0.0.1:<port>/orchestrator/api/` with `x-orchestrator-request: 1`. `Host` must be `127.0.0.1:<port>` or `localhost:<port>`; a missing header, or an `Origin` from another site, receives 403 `Same-origin management request required`. When the Web server is not bound to a loopback address, the plugin refuses to start.
+
+A save through the API has the panel's permissions: its origin is `panel`, so it may change the execution environment and the account fields setup reads. A save through the main Session's tools may change neither (`panelOnlyEnvironment`, `panelOnlyAccounts`).
+
+These routes and fields can be relied on; `src/app/api.ts` holds other routes that serve the panel and change with it.
 
 | Request | Answer |
 | --- | --- |
-| `GET state` | What every page reads: `setup`, with `problem` and `feishuProblem`, each `null` or a setup problem with `place`, `code`, `values` and `detail`, and `accounts` once setup resolved them; `health`, an entry per part, below, with `state` (`starting`, `ready`, `paused` or `error`), `detail` and `at`; `load`, the Executor Sessions `running`, the Tickets `queued` and `maxWorkers`; `paused`; and `masterId` |
-| `GET settings` | `blocks`: `policy`, `eval` and `executor`, each with its `value` and its `revision`; `sources`: the Source instances, each with `id`, `kind`, `installed`, its block's `value`, `{"enabled": …, "config": {…}}`, and `revision`, its kind's form, and its setup `problem` when it has one; `policyVersion`; and `environment`, the execution environment's `root` and `variables` |
-| `GET sources` | Each Source's status: `state` (`missing`, `off`, `error`, `setup`, `starting`, `paused` or `ready`), the `health` of its parts, its setup `problem`, the last day's `stats`, the Triggers it `filtered` in that day, and the messages it `dropped` in that day, newest drop first, each with its `channel`, `preview`, `ticket` (`id` and `title`) when it was for one, its `thread` when the store has it, and `dropped.at` and `dropped.reason`, `channelGone` or `channelIgnored` |
-| `PUT settings/<block>` with `{"value": …, "revision": n}` | Saves one block: `saved`, the block's new `revision`, `policy_changed` and `restarting`. `value` is the whole block, as `GET settings` holds it; a missing key takes its default |
+| `GET state` | What every page reads: `setup`, with `machine` (`stateDir` and the three limits), `problem` and `feishuProblem` (each `null` or a setup problem with `place`, `code`, `values` and `detail`), and `accounts` once it resolved (`repository`, `agent`, `feishu`); `load` (the Executor Sessions `running`, the Tickets `queued`, `maxWorkers`); `masterId`; `paused`; `health` |
+| `GET settings` | `policyVersion`; `blocks` (`policy`, `eval`, `executor`, each with `value` and `revision`); `sources` (for each instance `id`, `kind`, `title`, `description`, `installed`, `value` as `{"enabled": …, "config": {…}}`, `revision`, the fields whose save restarts (`restarts`), its kind's `fields` and `facts`, the resolved display names `labels`, its setup `problem` when it has one, and its part of the Policy as `policy`: `fields`, `explicit`, `rows`, `sync`); `environment` (`root` and `variables`) |
+| `GET sources` | Each Source's status: `state` (`missing`, `off`, `error`, `setup`, `starting`, `paused` or `ready`), the `health` of its parts, its `problem`, the last day's `stats`, the Triggers it `filtered` in that day, and the messages it `dropped` in that day, newest drop first, each with its `channel`, `preview`, its `ticket` when it was for one, its `thread` when the store has it, and `dropped.at` with `dropped.reason`, `channelGone` or `channelIgnored` |
+| `PUT settings/<block>` with `{"value": …, "revision": n}` | Saves one block: `saved`, the new `revision`, `policy_changed`, `restarting` and `context_delivery`. `block` is `policy`, `eval`, `executor` or `source:<source id>`; `value` is the whole block as `GET settings` holds it; a missing key takes its default |
 | `POST executor/pause` with `{"paused": true}` or `false` | Pauses or resumes processing: `paused` |
-| `POST setup/check` | Runs setup again by restarting xenra-superagent: `restarting: true`. Refused when setup has nothing to fix |
+| `POST setup/check` | Runs setup again by restarting the application: `restarting: true`. Answers 400 when setup has nothing to fix |
 | `POST policy-sync/<source id>` | Syncs that Source's allowed list now: `policy`, the Source's part as saved |
-| `GET prompts`, `PUT prompts` with `{"config", "baseRevision"}` | Reads the prompt configuration: `current`, with its `revision` and `config`, `defaults`, `sections`, the team sections in the order Sessions read them, `skillName`, the pattern of a team skill's name, `builtin`, the names a team skill cannot take, and `skillPrefix`, which Sessions load a skill's name under. Or saves it: the new `revision` |
-| `POST tickets/<id>/retry`, `POST tickets/<id>/stop` | Retries or stops a Ticket, as the panel does |
+| `GET prompts` | `current` (with `revision` and `config`), `defaults`, `sections` (the team sections), `skillName` (the pattern of a team skill's name), `builtin` (the names a team skill cannot take), `skillPrefix` (the prefix a Session loads a skill's name under), `parts` (the built-in parts with their `base`), `defaultChanged`, each Session's prompt revision, and the history |
+| `PUT prompts` with `{"config", "baseRevision"}` | Saves the prompt configuration: the new `revision`, `effect: "next-request"` and `context_delivery` |
+| `POST prompts/preview` | Composes without saving: both roles' complete prompts and their parts |
+| `POST tickets/<id>/retry`, `POST tickets/<id>/stop` | Retries or stops a Ticket as the panel does, answering `retried` or `stopped` |
+| `GET tickets`, `GET tickets/<id>`, `GET threads`, `GET threads/<key>`, `GET decisions`, `GET overview`, `GET search` | The views the panel's pages read; `src/app/api.ts` lists the filters |
+| `POST triggers/<id>/requeue`, `POST decisions/<id>/dismiss`, `POST threads/<key>/unsubscribe`, `POST sources/<id>/labels` | The operations the panel's buttons perform |
 
 Health entries are grouped by responsibility:
 
 | Entry | Reports |
 | --- | --- |
-| `runtime` | The application itself |
+| `runtime` | The application itself; a failed pass shows here |
 | `models` | Sessions waiting on a model-budget retry |
 | `evals` | Unavailable Evals from the last hour with no later judgement or dismissal |
-| `assessment`, `launch`, `delivery`, `relay`, `notice`, `reply` | Stored work described in [003 Execution](003-execution.en.md); delivery counts waiting work, while reply covers Channel messages |
-| `worker` | Executor Session event handling; appears after its first failure |
-| `github`, `feishu`, `history` | Source polling, events and history recovery |
+| `assessment`, `launch`, `delivery`, `relay`, `notice`, `reply` | The effect queue's six kinds of work, described in [003 Execution](003-execution.en.md); `delivery`'s failures show on the Ticket instead |
+| `worker` | Executor Session event handling; it appears after the first failure |
+| `github`, `feishu`, `history` | Source polling, event consumption and history recovery |
 | `sync:<source id>` | Allowed-list synchronization |
 
-A refusal has a status and `error`, its English text:
+A refusal carries a status and an English `error`:
 
-- 400: an invalid value (`issues`, each with its `path`), a failed account check (`setup`), a fixed refusal (`code` and `values`), or a body that is not JSON or is too large.
+- 400: an invalid value (with `issues`, each with its `path`), a failed account check (with `setup`), a fixed refusal (with `code` and `values`), or a body that is not JSON or is over the limit.
 - 404: something that does not exist.
 - 409: a stale revision.
-- 500: anything else.
+- 500: everything else.
 
-The blocks:
-
-- `source:github`, `source:feishu`: `{"enabled": true, "config": {…}}`. GitHub's config has `repository` and `cli`, and the switches `observeIssues`, `observePulls`, `observeComments` and `observeCi`, off by default, which receive every new Issue, new pull request and comment in the repository and the default branch's CI; Feishu's has `cli`, `chats` as `[{"chatId": "oc_…", "name": "…", "listen": "mentions"}]` (or `"all"`), `directMessages`, and `otherChats` as `"none"` or `"mentions"`.
-- `policy`: `{"rules": […], "sources": {"github": {"allowed": [{"id": "<login>"}], "bots": [{"id": "dependabot[bot]"}]}, "feishu": {"allowed": [{"id": "ou_…", "name": "…"}], "syncChat": "oc_…", "admission": {"oc_…": {"unlistedAddressed": "explicit"}}}}}`. `bots` lists the bots whose messages may become inferred candidates. An `admission` row is keyed by chat id, `other` or `direct` for Feishu, and by `issues`, `pulls`, `comments` or `ci` for GitHub; an unset cell takes its default (see [002 Authorization](002-authorization.en.md)).
-- `eval`: `mode`, `timeoutSeconds` and `model`.
-- `executor`: `model`, `maxWorkers`, `directory`, `prepare` and `blockedCommands`. The processing pause is a setting of its own, `paused`, which `POST executor/pause` sets.
-
-Changing a repository or CLI runs the corresponding setup check first. A failed check returns 400 with details in `setup`. A successful account change, or any save while setup is pending, returns `restarting: true`. The API is temporarily unavailable while the application restarts.
+The body limit is 128 KiB, and a prompt save may be `4 × promptMaxChars + 4096` bytes. A save whose revision changed while it ran answers 409 and needs a fresh read.
 
 ```sh
 api=http://127.0.0.1:3082/orchestrator/api
@@ -215,72 +296,101 @@ curl -s -X PUT -H 'x-orchestrator-request: 1' -H 'content-type: application/json
   -d "{\"value\": {\"enabled\": true, \"config\": {\"repository\": \"acme/widgets\", \"cli\": \"$HOME/.local/bin/gh-agent\"}}, \"revision\": $rev}"
 ```
 
+Changing the repository or the CLI runs the matching account check first; a failure answers 400 with the details under `setup`. A successful account change, and any save while setup waits, answer `restarting: true`, and the application restarts.
+
 ## Setup checks
 
-Setup uses the DeepSeek Harness subprocess service, as worker shells do. It removes environment variables whose names contain KEY, PASSWORD, SECRET or TOKEN.
+Setup runs through DeepSeek Harness's subprocess service, the same way Executor shells do, so the host strips environment variables whose names contain KEY, PASSWORD, SECRET or TOKEN from those subprocesses — which is also why the execution environment holds no credentials.
 
-Setup verifies the GitHub repository and the agent's push access, writes the worker environment, and checks that git uses only the agent credentials for github.com. A Feishu setup failure disables only the Feishu Source.
+Setup does three things:
 
-The process environment that setup writes:
+1. It checks the GitHub repository and the agent's push access, and reads the Feishu bot identity; a Feishu failure disables the Feishu Source alone and everything else runs.
+2. It writes the execution environment: the shims in `<stateDir>/worker-bin` (`gh` runs the agent's CLI, `lark-cli` runs the bot's CLI or fails, and blocked commands fail) and `<stateDir>/worker-gitconfig`. A shim removes its own directory from `PATH` before handing over, so a wrapper that resolves `gh` by name still reaches the real binary.
+3. It applies the process environment: `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_NOSYSTEM` are set, `GH_TOKEN`, `GITHUB_TOKEN`, the git location variables and the commit identity variables are cleared, and `worker-bin` goes first on `PATH`; then `git config --show-origin` confirms that the github.com credential helper really comes from that file, and setup reports `gitTooOld` when it does not.
 
-- **Command shims** in `<stateDir>/worker-bin`, first on `PATH`: `gh` runs the agent's CLI; `lark-cli` runs the bot's CLI; blocked commands fail. A shim removes its own directory from `PATH` before it runs its target.
-- **git configuration** in `<stateDir>/worker-gitconfig`: replaces the operator's global and system git configuration. It selects the agent CLI as the github.com credential helper, rewrites GitHub SSH addresses to HTTPS and defines Git LFS filters. Personal git settings such as an HTTP proxy do not apply. No commit identity is set here, git never prompts for credentials, and `GH_TOKEN` and `GITHUB_TOKEN` are removed.
+Because `worker-bin` is first on `PATH`, the `gh` an Executor calls is the agent's. `worker-gitconfig` replaces the operator's global and system git configuration, so personal settings such as an HTTP proxy do not apply; it rewrites GitHub's SSH addresses to HTTPS and defines the Git LFS filters. No commit identity is set there: the prompts name it, and `user.useConfigOnly` makes git fail rather than guess one.
 
-A file in `worker-bin` or `worker-gitconfig` that xenra-superagent did not write stops setup. A Ticket directory inside a git repository whose own configuration adds credentials fails the Ticket.
+A file in `worker-bin` or `worker-gitconfig` that this application did not write (its first two lines carry no marker) fails setup, which names the file instead of overwriting it. A Ticket directory inside a repository whose own config sets credentials or `http.*extraheader` fails that Ticket, and the message names the keys to remove.
 
 ## Try it
 
-From an allowed GitHub account, open an Issue or post a comment containing `@<agent login> <request>`. Within a polling interval (one minute by default), Overview should show a Ticket. The agent acknowledges the request, works in its own Session and directory, and delivers in the original conversation. For Feishu, mention the bot in a configured chat.
+With a GitHub account on the allowed list, open an Issue, or post a comment containing `@<agent login> <request>`. Within one polling interval (60 seconds by default) a Ticket should appear among the **Pending Tickets** on **Home** or in the **Open** list on **Tickets**. The agent acknowledges in the original conversation, works in its own Session and its own directory, and delivers the result where the request came from, usually as a pull request.
+
+With Feishu, mention the bot in a configured chat, or post in an allowed chat when it receives everything; direct messages work the same way.
 
 ## Upgrade
 
 1. Wait until no Executor is in the middle of a turn.
 2. Back up `<stateDir>/orchestrator.sqlite`.
 3. Run `git pull && pnpm install && pnpm build`.
-4. Run `scripts/xenra-superagent restart` and inspect its status.
+4. Run `scripts/xenra-superagent restart`, then `status` and confirm it exits 0.
 
-A restart ends running Assignments and starts replacements with recovery notes. Team text and overridden prompt parts are retained; parts without overrides follow the new defaults. Review parts marked **Default updated** after upgrading.
+A restart ends running Assignments and starts replacements with a recovery note. Team text and overridden prompt parts survive, and parts without an override follow the new defaults; after an upgrade, check the parts marked **Default updated**.
 
-A database migrated by a newer version cannot be opened by an older one. Rollback therefore requires the pre-upgrade backup. After upgrading DeepSeek Harness itself, restart the running instance so the panel loads matching artifacts.
+A database a newer version migrated cannot be opened by an older one: the schema version only grows, and an older build reports `Unsupported orchestrator database version`. Rolling back therefore means rolling back to the backup taken before the upgrade. The current schema is 11; startup migrates a schema 10 database once, and rejects anything older with a message to use a new state directory.
+
+After upgrading DeepSeek Harness itself, restart the running instance so the panel loads artifacts that match the host; otherwise the plugin page fails to load.
 
 ### Upgrading from dsh-superagent
 
-This project was called `dsh-superagent`; the package, the DSH entry, the presets, the skills, the script and the environment variables are now `xenra-superagent` and `XENRA_SUPERAGENT_*`. An installation made under the old name keeps working, because stored data is read back under the new names: worker shims and the agent git configuration written by the old name are still recognised and replaced, prompt text and `prepare` commands are rewritten from `dsh-superagent-*` and `DSH_SUPERAGENT_*`, and messages delivered under the old source stay deduplicated. Only the machine configuration is not migrated automatically; change it once:
+This project was once called `dsh-superagent`. The package, the plugin entries, the presets, the skills, the script and the environment variables are now `xenra-superagent` and `XENRA_SUPERAGENT_*`. An installation made under the old name still works, because what is read back is interpreted under the new name:
+
+- Files in `worker-bin` and `worker-gitconfig` written under the old name still count as this application's and are replaced.
+- Saved prompt text and the `DSH_SUPERAGENT_*` in a prepare command are rewritten to `XENRA_SUPERAGENT_*` during migration, and so are the `dsh-superagent-*` skill and variable prefixes.
+- Messages delivered under the old source are still deduplicated by their original id, so none is sent twice.
+- The hidden marker on GitHub comments is recognised under either name.
+
+Only the profile configuration does not migrate; edit it once by hand:
 
 1. In `<profile>/cordis.patch.yml`, rename the entry `dsh-superagent` to `xenra-superagent`, and `dsh-superagent-feishu` and `dsh-superagent-github` to `xenra-superagent-feishu` and `xenra-superagent-github`. Keep each `stateDir`, so the existing database and Tickets are reused.
-2. Set `XENRA_SUPERAGENT_PROFILE` and `XENRA_SUPERAGENT_URL` where the old `DSH_SUPERAGENT_PROFILE` and `DSH_SUPERAGENT_URL` were set, and point the hourly check at `scripts/xenra-superagent`.
-3. Choose **Xenra-SuperAgent** in the sidebar; the panel's entry in the DeepSeek Harness Plugin Manager is the new one.
+2. Where `DSH_SUPERAGENT_PROFILE` and `DSH_SUPERAGENT_URL` were set, set `XENRA_SUPERAGENT_PROFILE` and `XENRA_SUPERAGENT_URL`, and point the hourly check at `scripts/xenra-superagent`.
+3. Choose **Xenra-SuperAgent** in the sidebar; the DeepSeek Harness plugin manager lists this plugin under its new entry.
+4. Start once after the upgrade, open **Home** to confirm the Tickets are still there, glance at the Decision record and Threads under **Settings › Advanced views**, then delete the old entry rows.
 
-Sessions resumed from before the rename keep the preset ids they were created with. Once no Executor or main Session from before the upgrade is in use, remove the old preset rows.
+Sessions restored before the rename keep the preset ids they were created with, and those ids no longer exist, so restoring them fails. Once the Executors and main Session from before the upgrade are no longer needed, delete the Sessions they live in; the Sessions themselves can be removed from DeepSeek Harness.
 
-### Agent presets
+## Agent presets
 
-The worker and router presets move shell commands to the background after 5 seconds. A Session cannot load without its preset. Keep the `xenra-superagent-worker` and `xenra-superagent-router` rows in `cordis.patch.yml` while their Sessions are in use; otherwise resume fails with `agent-preset/not-found`.
+The two preset rows do one thing: let a Session find the preset it needs when it is created and when it resumes.
+
+- **Do not delete them.** While any Session still uses one, deleting it makes that resume fail with `agent-preset/not-found`. To delete them, first confirm the Sessions that used them have ended and been removed.
+- **Do not select them for personal Sessions.** The worker preset has no tools for asking a person, presenting or plan mode; the router preset only reads and has no shell.
+- **A wrong selection is corrected.** When the Web UI selects another preset before a Session's first turn, `Sessions` selects the role's preset back; after the first turn the host no longer allows a change.
+- A preset row has no setting that hides it from the list, so its name and description state its purpose directly.
 
 ## Troubleshooting
 
-Setup problems appear on the overview with a link to the fix, in the panel's language; the log and the API show the English text below.
+The panel shows setup problems in the interface language and links each to where it is fixed; logs and the API carry the English text below.
 
 | Symptom | Cause and fix |
 | --- | --- |
+| The plugin refuses to start, and the log says the configuration has keys it does not use | Delete the named keys as the message says, and move each to where it now lives (see "Machine configuration") |
+| The plugin refuses to start, and the log asks for a loopback Web server | Set the profile's `webserver.host` back to `127.0.0.1` |
+| `Orchestrator database schema N predates schema 10` | This channel's database comes from an older prototype and cannot be migrated; use a new `stateDir` |
+| `Unsupported orchestrator database version N` | A newer version migrated the database; rolling back needs the backup taken before the upgrade |
 | `The agent GitHub CLI is not set.` | Set the agent's CLI on the GitHub card |
-| `The agent GitHub CLI was not found.` | Set the wrapper's absolute path, or a command name on `PATH` |
-| `The agent GitHub CLI cannot read its account` | Sign the wrapper in with `auth login` |
-| `@… cannot read …` or `@… cannot push to …` | Give the agent account write access to the repository |
-| `The GitHub Source names no repository.` | Set the repository, `owner/name`, on the GitHub card |
-| A Ticket fails with `The prepare command failed: …` | The output names the cause, such as a wrong clone path; fix the command, then retry the Ticket |
-| `git does not read the github.com credential configuration xenra-superagent writes` | Install git 2.32 or later |
-| A Ticket fails with `The git configuration of the repository in … sets …` | Remove the named credential or `http.*.extraheader` settings from the clone's `.git/config` |
-| `… was not written by xenra-superagent` | Move the named file out of `<stateDir>/worker-bin` or `<stateDir>/worker-gitconfig`, or choose another `stateDir` |
-| `The bot lark-cli allows user identities` | Point the Feishu Source at a bot-only configuration, as in Feishu bot above |
-| `The bot lark-cli does not work.` or `The bot identity of app … is …` | Check the configuration's app id and secret |
-| `The Feishu bot is not a member of the chat.` | Add the bot to the chat in the chat's settings; the next attempt succeeds |
-| `status` exits 2 | A part reports an error, which a restart does not fix: `errors` names each part, as listed under Management API, with its detail; each part clears its own entry once it works again |
-| `status` exits 3 | Setup waits: `setup` says what is missing, and the overview links to the setting that fixes it |
-| `status` exits 1 | The service does not run, runs twice, does not answer, or its runtime reports an error; the output and the newest log say which |
-| `… timed out after 90 s`, `… was stopped by …`, `… exited with code …` or `… could not run: …` | A CLI failed without printing why; run the named program by hand as the operator's user to see its own message |
-| The panel says xenra-superagent is not answering | It is restarting, or did not start because of its configuration; the DeepSeek Harness log names the cause |
-| `xenra-superagent configuration has keys it does not use` (log) | Remove the named keys; the message says where each value lives now |
-| The log says the plugin is incompatible with the running dsh | Install a DeepSeek Harness version within the `engines.dsh` range |
-| The panel shows "Failed to load plugins" after a DeepSeek Harness upgrade | Restart the running instance |
-| Nothing happens after a mention | Check that the author is on the Source's allowed list, the Source is on, and processing is not paused. On GitHub, a mention added by editing an Issue's body is not received; mention the agent in a comment |
+| `The agent GitHub CLI was not found.` | Give the wrapper's absolute path, or a command name on `PATH` |
+| `The agent GitHub CLI cannot read its account.` | Run `auth login` for that wrapper |
+| `The agent GitHub CLI did not report a GitHub account.` | Same: after signing in, `api user` must print a login |
+| `@… cannot read …` / `@… cannot push to …` | Give the agent account write access to the repository, or check the repository name |
+| `The GitHub Source names no repository.` | Set the repository as `owner/name` on the GitHub card |
+| `The bot lark-cli does not work.` | Check the bot configuration directory and the wrapper's path, and that `lark-cli auth status` runs |
+| `The bot identity of app … is …` | Run `config init` again with the app secret so the bot identity becomes `ready` |
+| `The bot lark-cli allows user identities (strict mode …)` | Give the bot its own `strict-mode bot` configuration, as "Feishu bot" describes |
+| `The Feishu bot is not a member of the chat.` | Add the bot in the chat's settings; the next attempt succeeds |
+| `… was not written by xenra-superagent` | Move the named file out of `worker-bin` or `worker-gitconfig`, or use another `stateDir` |
+| `git does not read the github.com credential configuration xenra-superagent writes` | The message carries the git version that actually ran and the value it reported. On Settings → Deployment, under **This machine**, look for **Upgrade git…**: it first shows the command it would run (`winget`, `brew`, `apt` and so on, whichever package manager this machine has) and what that changes, and runs it only once you confirm; close the dialog to upgrade in your own terminal instead and then choose **Check again**. When no package manager is available it says so and names the version to reach |
+| `Preparing the agent environment failed.` with a permission error in the detail | Make `stateDir` writable by the OS user that runs DSH, or use a directory that user owns |
+| A Ticket fails with `The prepare command failed: …` | The output says why, such as a wrong clone path or a missing credential; fix the command and retry the Ticket. This failure is never retried automatically |
+| A Ticket fails with `The git configuration of the repository in … sets …` | Remove the named `credential.*` or `http.*extraheader` from the clone's `.git/config` |
+| `… timed out after 90 s`, `… was stopped by …`, `… exited with code …`, `… could not run: …` | A CLI failed without printing why; run the named program by hand as the operator and read its own message |
+| `status` exits 2 | A part keeps reporting an error, which a restart does not fix; `errors` names each part with its detail, and the entry clears itself once the part recovers |
+| `status` exits 3 | Setup is waiting: `setup` says what is missing, and the system problems on Home link to the setting that fixes it |
+| `status` exits 1 | The service is not running, runs twice, does not answer, or its runtime reports an error; the output and the newest log say which |
+| The panel says it cannot reach the service | The application is restarting, or did not start because of a setup problem; read the newest log under `.artifacts/` |
+| The panel shows "Failed to load plugins" | DeepSeek Harness was upgraded; restart the running instance |
+| A save answers `Setup is complete` | Setup is healthy and **Check again** has nothing to do; change the setting itself |
+| A save answers `Settings changed. Reload before saving.` | The revision is stale; reload and edit again |
+| A save answers `The execution environment … can only be changed in the management panel` | That field changes only from the panel or the management API; the main Session's tools cannot change it |
+| A save answers `The {block} model is not available: …` | The model provider is not configured, or that provider/model is unavailable |
+| Nothing happens after an `@` | Check that the author is on that Source's allowed list, the Source is enabled, and processing is not paused; on GitHub a mention added by editing a body is not received, so mention the agent in a comment |

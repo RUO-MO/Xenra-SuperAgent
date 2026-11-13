@@ -2,7 +2,9 @@
 
 [中文](README.md) · English
 
-Xenra-SuperAgent is a proactive coding agent for one GitHub repository, packaged as a bundle for [DeepSeek Harness](https://www.deepseek.com/harness/). It listens to GitHub and, optionally, Feishu. When someone allowed asks the agent for work, it opens a work item, works on it in its own DSH Session and directory, and answers in the original conversation, for example with a pull request. The web panel has three tabs — Home, Tickets and Settings: Home leads with what needs a person, and a fresh installation opens the first-run guide instead.
+Xenra-SuperAgent is a proactive coding agent for one GitHub repository, packaged as a bundle for [DeepSeek Harness](https://www.deepseek.com/harness/). It listens to GitHub and, optionally, Feishu (on by default; naming the bot's `lark-cli` on its card turns it on). When someone allowed asks the agent for work, it opens a work item, works on it in its own DSH Session and directory, and answers in the original conversation, for example with a pull request. The web panel has three tabs — Home, Tickets and Settings — and a fresh installation opens a four-step first-run guide, whose Feishu step may be skipped. Each Source is a foldable card whose head carries its own status line.
+
+It changes none of the git configuration a machine already had: every write stays in its own state directory, and the worker's git environment is handed to child processes only, never to other Sessions or the operator's terminals. **Uninstalling the plugin cleans up the files it wrote** — the shims, `worker-gitconfig` and the database — with nothing to do in the panel first. Linux, macOS and Windows are all supported.
 
 It is also a way of working with an agent: **take as little human attention as possible, and give as much value as possible.** An agent that can act for a whole team can also waste a whole team's attention, so it acts only when asked or when a rule the team wrote allows it, and speaks only when someone must act or can use a result. [docs/000-philosophy.en.md](docs/000-philosophy.en.md) explains the principle and what it asks of the operator.
 

@@ -223,7 +223,7 @@ Check Xenra-SuperAgent: run `scripts/xenra-superagent --profile xenra status` in
 
 面板只有三个标签页：**首页**、**工单**、**设置**。设置页有四个日常分组：来源、评估、执行、提示词；部署分组没有导航入口，日常只从首页的系统问题进入，或者在 DeepSeek Harness 的插件管理器里打开本插件。策略不是单独的分组：策略的规则、每个来源的名单与准入表都在 **评估** 下。改动会再次运行配置；如果是应用之外修好的东西（例如给 CLI 登录、升级 git），点 **重新检查** 让配置重跑一次——配置没有可修的问题时，这个操作会被拒绝（`Setup is complete`）。
 
-1. **来源。** 分组顶部先列出每个来源的状态、近 24 小时的到达与被过滤计数、被过滤的触发和被放弃发送的消息，再是配置它的卡片。填 GitHub 仓库（`owner/name`）和智能体 CLI，例如 `/home/me/.local/bin/gh-agent`。请求通常经智能体账号的通知到达：新 Issue、@ 该账号的评论在下一轮轮询时进来；用编辑 Issue 正文的方式加 @ 不会进来，请改为发表新评论。四个全量接收开关默认关闭，打开后连没有 @ 智能体的新 Issue、新 PR、评论和默认分支 CI 也一并接收，再由准入表决定它们能否成为候选。使用飞书时填机器人 CLI、群列表（每群是全量还是仅 @）、其他群和是否接收私信。
+1. **来源。** 每个来源是一张卡片，卡片头部就是它自己的状态行：状态点、运行/待处理、近 24 小时的到达与被过滤计数，以及各部件的健康说明；点标题可折叠或展开配置。卡片内还有被过滤的触发和被放弃发送的消息。填 GitHub 仓库（`owner/name`）和智能体 CLI，例如 `/home/me/.local/bin/gh-agent`。请求通常经智能体账号的通知到达：新 Issue、@ 该账号的评论在下一轮轮询时进来；用编辑 Issue 正文的方式加 @ 不会进来，请改为发表新评论。四个全量接收开关默认关闭，打开后连没有 @ 智能体的新 Issue、新 PR、评论和默认分支 CI 也一并接收，再由准入表决定它们能否成为候选。使用飞书时填机器人 CLI、群列表（每群是全量还是仅 @）、其他群和是否接收私信。
 
    保存仓库或账号字段会先做一次账号检查，然后重启应用；重启期间面板短暂不可用。
 
@@ -306,9 +306,11 @@ curl -s -X PUT -H 'x-orchestrator-request: 1' -H 'content-type: application/json
 
 1. 校验 GitHub 仓库与智能体的推送权限，读飞书机器人身份；飞书失败只停用飞书来源，其余照常。
 2. 写执行环境：`<stateDir>/worker-bin` 里的包装脚本（`gh` 运行智能体的 CLI，`lark-cli` 运行机器人的 CLI 或直接失败，被禁止的命令失败），以及 `<stateDir>/worker-gitconfig`。包装脚本在转交目标之前把自己的目录从 `PATH` 里去掉，所以包装脚本里按名字找 `gh` 也能到真正的二进制。
-3. 应用进程环境：设置 `GIT_CONFIG_GLOBAL`、`GIT_CONFIG_NOSYSTEM`，清掉 `GH_TOKEN`、`GITHUB_TOKEN`、git 位置变量与提交身份变量，并把 `worker-bin` 排在 `PATH` 最前；随后用 `git config --show-origin` 复核 github.com 的凭据助手确实来自那份配置，不是就报 `gitTooOld`。
+3. 用**worker 自己的环境**复核：`GIT_CONFIG_GLOBAL`、`GIT_CONFIG_NOSYSTEM`、清掉的 `GH_TOKEN`/`GITHUB_TOKEN` 与提交身份变量，以及排在 `PATH` 最前的 `worker-bin`，都随每一次子进程调用传入，然后运行 `git config --show-origin` 确认 github.com 的凭据助手确实来自那份配置，不是就报 `gitTooOld` 并附带实际版本与 git 的返回值。
 
-包装脚本排在 `PATH` 最前，因此执行器里的 `gh` 就是智能体的 `gh`。`worker-gitconfig` 取代运营者的全局与系统 git 配置，HTTP 代理之类的个人设置不会生效；它把 GitHub 的 SSH 地址改写成 HTTPS，并定义 Git LFS 过滤器；提交身份不在这里设，由提示词指定，`user.useConfigOnly` 让没有身份时报错而不是猜一个。
+这些变量**只交给子进程，绝不写进宿主进程的 `process.env`**：DSH 的其他会话和运营者自己的终端都在同一个进程里，一个全局的 `GIT_CONFIG_GLOBAL` 会把它们对其他主机的凭据一并改掉。
+
+包装脚本排在 `PATH` 最前，因此执行器里的 `gh` 就是智能体的 `gh`。`worker-gitconfig` 只把 github.com 的凭据助手指向智能体 CLI，**不清空**全局 helper——清空会把 codeup、GitLab 等所有主机的凭据一起抹掉；它不读系统级 git 配置，避免系统级助手在 github.com 上替智能体回答、把运营者本人的 token 交出去。它把 GitHub 的 SSH 地址改写成 HTTPS，并定义 Git LFS 过滤器；提交身份不在这里设，由提示词指定，`user.useConfigOnly` 让没有身份时报错而不是猜一个。
 
 `worker-bin` 或 `worker-gitconfig` 里出现不是本应用写入的文件（首两行没有写入标记），配置失败并点名该文件，不覆盖它。工单目录如果处在一个自身配置写了凭据或 `http.*extraheader` 的仓库里，该工单失败并说明要删掉的键。
 

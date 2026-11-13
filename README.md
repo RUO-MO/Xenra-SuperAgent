@@ -2,7 +2,9 @@
 
 [English](README.en.md) · 中文
 
-Xenra-SuperAgent 是一个面向单个 GitHub 仓库的主动式编码智能体，以 [DeepSeek Harness](https://www.deepseek.com/harness/) 的 bundle 形式分发。它监听 GitHub，也可以监听飞书。当获许的人向它请求工作时，它会开一张工单，在属于自己的 DSH 会话和目录里完成，再回到原对话里答复，例如给出一个 Pull Request。Web 面板只有首页、工单、设置三个标签页：首页先显示需要人处理的事，新安装则由首次配置引导接手。
+Xenra-SuperAgent 是一个面向单个 GitHub 仓库的主动式编码智能体，以 [DeepSeek Harness](https://www.deepseek.com/harness/) 的 bundle 形式分发。它监听 GitHub，也可以监听飞书（默认启用，填上机器人的 `lark-cli` 即生效）。当获许的人向它请求工作时，它会开一张工单，在属于自己的 DSH 会话和目录里完成，再回到原对话里答复，例如给出一个 Pull Request。Web 面板只有首页、工单、设置三个标签页；新安装由四步首次配置引导接手，飞书那一步可跳过。每个来源是一张可折叠的卡片，卡片头部就是它自己的状态行。
+
+它不改动机器上已有的任何 git 配置：所有写入都在自己的状态目录里，worker 的 git 环境只交给子进程，不污染其他会话或终端。**卸载时插件会自动清理自己写的文件**（包装脚本、`worker-gitconfig`、数据库），不需要事先进面板操作。插件在 Linux、macOS 与 Windows 上都可用。
 
 它同时也是一种与智能体协作的方式：**尽可能少占用人的注意力，尽可能多交付价值。** 一个能为整个团队行动的智能体，也能消耗整个团队的注意力。因此它只在被请求时、或在团队写下的规则允许时行动；只在有人必须行动、或能用上结果时才说话。[docs/000-philosophy.md](docs/000-philosophy.md) 解释了这一原则以及它对运营者的要求。
 

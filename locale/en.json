@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Xenra-SuperAgent",
-    "description": "Watches one GitHub repository, turns authorized requests into tickets, and executes each in its own DSH Session. Open it in the sidebar for attention, sources, policy, execution, and prompts."
+    "description": "Watches one GitHub repository (and optionally Feishu), turns authorized requests into tickets, executes each in its own DSH Session, and replies in the original conversation. The web panel has Home, Tickets and Settings tabs, with a four-step first-run guide for a fresh install. Its state directory, shims and git configuration stay inside its own directory and are cleaned up on uninstall."
   }
 }

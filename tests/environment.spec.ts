@@ -133,7 +133,9 @@ describe('agent git configuration', () => {
     await exec('git', ['-C', 'repo', 'remote', 'add', 'origin', 'git@github.com:acme/widgets.git'], { cwd: dir, env })
     expect(await git('-C', 'repo', 'remote', 'get-url', '--push', 'origin')).toBe('https://github.com/acme/widgets.git')
     expect(await git('config', '--show-origin', '--get-all', 'credential.https://github.com.helper')).toBe(`file:${workerGitConfig(dir)}\t${credentialHelper('/opt/agent tools/gh')}`)
-    expect(await git('config', '--get-all', 'credential.helper')).toBe('')
+    // The worker configuration no longer empties the global helper list, so the operator's `osxkeychain` must not be
+    // reachable through the worker's own file. git exits 1 when no value is set, which is the "absent" this asserts.
+    await expect(git('config', '--get-all', 'credential.helper')).rejects.toThrow()
     await expect(git('config', 'commit.gpgsign')).rejects.toThrow()
     await expect(git('config', 'core.abbrev')).rejects.toThrow()
     expect(env).not.toHaveProperty('GIT_AUTHOR_NAME')

@@ -1,0 +1,78 @@
+# The gate between `dev` and `main`: a PR merges only after the same checks a
+# developer runs locally pass on clean Linux and Windows machines.
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          # The version pinned in package.json's `packageManager`.
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      # `lib/` is committed so the repository installs as-is. A build that
+      # changes it means the checked-in artifacts are stale.
+      - name: Check that lib/ matches the sources
+        run: git diff --exit-code --stat -- lib/
+
+  windows:
+    name: typecheck, test, build (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+      # The Windows runner has no POSIX `sh`/`sleep`/`tmux`, which several
+      # suites spawn. Exclude only those files; everything else must pass.
+      - name: Test
+        run: >-
+          pnpm test --exclude 'tests/service-script.spec.ts'
+          --exclude 'tests/environment.spec.ts'
+          --exclude 'tests/commands.spec.ts'
+          --exclude 'tests/sources.spec.ts'
+          --exclude 'tests/store.spec.ts'
+          --exclude 'tests/prompts.spec.ts'
+          --exclude 'tests/deployment.spec.ts'
+          --exclude 'tests/runtime.spec.ts'
+          --exclude 'tests/docs.spec.ts'
+      - name: Build
+        run: pnpm build
+      - name: Check that lib/ matches the sources
+        run: git diff --exit-code --stat -- lib/

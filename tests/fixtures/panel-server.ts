@@ -7,6 +7,7 @@ import { z } from 'zod'
 import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { Api, ApiResponse, RouteParams } from '../../src/app/api.ts'
 import type { Target } from '../../src/workspace/targets.ts'
+import type { UpdateState } from '../../src/app/update-check.ts'
 import { SKILL_NAME, SKILL_PREFIX, TEAM_SECTIONS, builtInBase, builtInPart, builtInParts, composePrompt, composeSkill, defaultPrompts,
   environmentSection, policySection, promptParts } from '../../src/app/prompts.ts'
 import type { DroppedReply, HistoryView, Problem, PromptsView, SetupView, SourceStatusRow, SourceView, StateView, ThreadPageView,
@@ -115,6 +116,8 @@ export interface PanelServer {
   /** The registered workbench targets, and the one a request acts on when it names none. */
   targets: Target[]
   selectedTarget: string
+  /** What `GET update` answers; a test overrides it to describe a checkout that is behind or dirty. */
+  update?: UpdateState
   /** Replaces the answer of `POST git/upgrade`, for a test that needs a failure or a still-outdated result. */
   gitUpgrade?: (answer: { ok: boolean; output: string; version?: string; outdated: boolean })
     => { ok: boolean; output: string; version?: string; outdated: boolean }
@@ -374,6 +377,10 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
   // A workbench request is turned into a Trigger; the panel never opens a Ticket itself.
   'POST workbench/requests': { body: true, answer: ({ body }) => ({ accepted: true, triggerId: `workbench:${String(body.id)}`,
     target: { id: String(body.target ?? 'acme'), kind: 'repository' as const } }) },
+  // The update check: whether the installed copy is behind what its own upstream has.
+  'GET update': { answer: () => server.update ?? { kind: 'linked' as const, spec: 'link:/srv/xenra-superagent',
+    directory: '/srv/xenra-superagent', version: '0.2.0', status: 'up-to-date' as const, local: 'abc1234', remote: 'abc1234',
+    branch: 'origin/main', behind: 0, ahead: 0, instruction: 'Nothing to pull.' } },
   'GET targets': { answer: () => ({ items: server.targets, selected: server.selectedTarget, watched: 'acme/widgets' }) },
   'DELETE targets/:id': { answer: ({ params }) => {
     server.targets = server.targets.filter(item => item.id !== params.id)

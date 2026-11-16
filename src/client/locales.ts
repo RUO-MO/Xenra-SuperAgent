@@ -116,7 +116,22 @@ const TEXT = {
   'tab.tickets': ['工单', 'Tickets'],
   'tab.threads': ['线程与触发', 'Threads and Triggers'],
   'tab.evals': ['判断记录', 'Assessments'],
-  // Workbench: a request entry that acts on the same repository as GitHub and Feishu requests.
+  // Checking for updates: a linked checkout and a GitHub install are judged differently, so the wording says which.
+  updateTitle: ['检查更新', 'Check for updates'],
+  updateKindHint: ['链接安装看它自己的上游分支，GitHub 安装看远端最新的提交；只读检查，不会自动升级。', 'A linked install is judged by its own upstream branch, a GitHub install by the remote\'s latest commit. This is a read-only check and never upgrades by itself.'],
+  updateKindLinked: ['本地文件夹安装', 'Linked folder install'],
+  updateKindGit: ['GitHub 安装', 'GitHub install'],
+  updateUnavailable: ['读不到安装信息：这个 profile 里没有声明本插件。', 'Install details are unavailable: this profile does not declare the plugin.'],
+  'update.up-to-date': ['已是最新', 'Up to date'],
+  'update.behind': ['落后 {behind} 个提交', '{behind} commit(s) behind'],
+  'update.ahead': ['领先 {ahead} 个提交', '{ahead} commit(s) ahead'],
+  'update.diverged': ['与上游分叉', 'Diverged from upstream'],
+  'update.dirty': ['有未提交的改动', 'Uncommitted changes'],
+  'update.unavailable': ['无法判断', 'Cannot tell'],
+  updateCommits: ['本地 {local} · 上游 {remote}', 'Local {local} · upstream {remote}'],
+  updateVersion: ['当前版本 {version}', 'Running version {version}'],
+  updateCheck: ['重新检查', 'Check again'],
+  // Workbench: a request entry that acts on the target a person picks, which may be a repository or a local folder.
   workbenchTarget: ['这次要求作用于', 'This request acts on'],
   workbenchTargetHint: ['选一个目标：GitHub 仓库会在那里提交改动并可开 PR，本地文件夹则直接改里面的文件。监听哪个仓库是另一回事，见设置。', 'Pick a target: a GitHub repository receives the changes and can become a pull request, while a local folder is edited in place. Which repository is watched is a separate setting.'],
   workbenchKindRepository: ['GitHub 仓库', 'GitHub repository'],

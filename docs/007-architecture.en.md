@@ -218,6 +218,7 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `src/sources/feishu.ts` | The Feishu kind and plugin entry, exported as `./feishu-watch`: configuration, Policy part with chat sync, and environment variables |
 | `src/sources/workbench.ts` | The workbench entry kind and plugin, exported as `./workbench`: builds a console request into a Trigger, its scope and variables; owns no repository or directory |
 | `src/workspace/targets.ts` | Workspace targets: repository and local-folder kinds, their validation (absolute path, not inside the state directory, no nesting between targets), the default target and id generation; the watched repository stays a single deployment-level fact |
+| `src/app/update-check.ts` | Checking for updates: a linked install is judged by its own checkout's upstream branch, a GitHub install by the remote commit; read-only, it fetches nothing and installs nothing |
 | `src/sources/feishu-trigger.ts` | One rule that turns Feishu events, history pages and topic pages into Triggers |
 | `src/sources/feishu-loops.ts` | The Feishu loops: the event consumer, history recovery, chat name refresh, subscribed-thread polling |
 | `src/sources/feishu-channel.ts` | The Feishu Channel: `sendFeishu` and `feishuLink` |
@@ -231,6 +232,7 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `src/client/route.ts` | `TABS`, `SETTINGS_GROUPS`, `parseRoute`, `initialLocation` and `remember` |
 | `src/client/home.tsx` | Home: what waits for you first, then one line of status; the Executor counts fold away |
 | `src/client/workbench.tsx` | Workbench: the shared project, the request and its scope, and the requests submitted this session |
+| `src/client/update-status.tsx` | The update section: whether this copy is a linked install or a GitHub one, how far it is ahead or behind, and what to do to update |
 | `src/client/setup-wizard.tsx` | The first-run guide: repository, account, who may ask and the work directory, each step writing its settings block |
 | `src/client/source.tsx` | The Source status and the Source settings cards |
 | `src/client/trigger.tsx` | The Trigger status: Threads under a filter |
@@ -300,6 +302,8 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `tests/environment.spec.ts` | The shims, `worker-gitconfig`, foreign files and directory checks |
 | `tests/workbench.spec.ts` | Building a workbench request into a Trigger, threading by target, and the HTTP route's dedupe and refusals |
 | `tests/targets.spec.ts` | Workspace targets: telling the two kinds apart, refusing a bad or nested path, the default target and id generation |
+| `tests/update-check.spec.ts` | Checking for updates: classifying the install spec, comparing against the upstream branch, a dirty tree outranking "behind", and an absent upstream reported as unknown |
+| `tests/panel-update.spec.tsx` | The update panel: telling a linked install from a GitHub one, and the wording for a dirty checkout and for an unknown |
 | `tests/panel-workbench.spec.tsx` | The Workbench tab: the shared project, submitting a request, and a blocking deployment problem taken over by the guide |
 | `tests/profile.spec.ts` | Telling an uninstall from a restart through the profile manifest: a restart keeps the state directory, an uninstall clears it, an unreadable manifest deletes nothing |
 | `tests/index.spec.ts` | The plugin entry: `Config`, `machineOf` and the restart callback |

@@ -141,6 +141,11 @@ div.dt-preview-head { color: var(--dsw-alias-label-secondary); }
 .dt-target-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; font-size: 13px; font-weight: 500; }
 .dt-target-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dt-target-detail { font-size: 12px; color: var(--dsw-alias-label-caption); overflow-wrap: anywhere; }
+/* Update check: the install kind and what the answer means, with the two paths that identify this copy. */
+.dt-update { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.dt-update-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.dt-update-kind { font-weight: 500; }
+.dt-update-detail { font-size: 12px; color: var(--dsw-alias-label-caption); overflow-wrap: anywhere; }
 .dt-card-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dt-row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
 .dt-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }

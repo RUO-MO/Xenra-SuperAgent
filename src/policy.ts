@@ -8,6 +8,7 @@ import { ADMISSION_DEFAULTS, type Admission, type AdmissionCell, type AdmissionR
 import { key, type AssessmentOutcome, type Mandate, type Policy, type PolicyEffect, type SourceScope, type Strength, type Thread, type Ticket,
   type Trigger, type ActorRef, type GateResult } from './core/index.ts'
 import { sameName } from './infra/text.ts'
+import { TargetsConfigSchema } from './workspace/targets.ts'
 import { WORKER_COMMANDS } from './infra/environment.ts'
 
 export const RuleIdSchema = z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/)
@@ -94,6 +95,8 @@ export const ExecutorConfigSchema = z.object({
   directory: z.string().trim().refine(path => path === '' || /^(?:\/|[A-Za-z]:[\\/])/.test(path), 'An absolute path (POSIX or a Windows drive path), or empty for <stateDir>/work').default(''),
   prepare: z.string().max(LIMITS.prepareCommand).default(''),
   blockedCommands: z.array(CommandNameSchema).default([]),
+  /** The places a workbench request may act on; the watched repository stays a single deployment-level fact. */
+  targets: TargetsConfigSchema.default(() => TargetsConfigSchema.parse({})),
 }).strict()
 export const SourceInstanceSchema = z.object({ enabled: z.boolean().default(true), config: z.record(z.string(), z.unknown()).default({}) }).strict()
 export const SettingsSchema = z.object({

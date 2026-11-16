@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, vi } from 'vitest'
 import { z } from 'zod'
 import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { Api, ApiResponse, RouteParams } from '../../src/app/api.ts'
+import type { Target } from '../../src/workspace/targets.ts'
 import { SKILL_NAME, SKILL_PREFIX, TEAM_SECTIONS, builtInBase, builtInPart, builtInParts, composePrompt, composeSkill, defaultPrompts,
   environmentSection, policySection, promptParts } from '../../src/app/prompts.ts'
 import type { DroppedReply, HistoryView, Problem, PromptsView, SetupView, SourceStatusRow, SourceView, StateView, ThreadPageView,
@@ -111,6 +112,9 @@ export interface PanelServer {
   git: { version?: string; outdated: boolean; minimum: string; plan?: { command: string; by: string } }
   /** Source kinds whose bundle row is off in `cordis.patch.yml`, so their cards report `installed: false`. */
   uninstalled?: string[]
+  /** The registered workbench targets, and the one a request acts on when it names none. */
+  targets: Target[]
+  selectedTarget: string
   /** Replaces the answer of `POST git/upgrade`, for a test that needs a failure or a still-outdated result. */
   gitUpgrade?: (answer: { ok: boolean; output: string; version?: string; outdated: boolean })
     => { ok: boolean; output: string; version?: string; outdated: boolean }
@@ -257,6 +261,12 @@ function initial(): PanelServer {
   const defaults = { revision: 0, previousRevision: null, savedAt: '', source: 'defaults' }
   return {
     health: {}, down: false, pending: 0, opened: [], requests: [], misuse: [], queued: new Set(), dropped: [], failing: [],
+    // One watched repository target and one local folder, so a test can tell the two kinds apart in the picker.
+    targets: [
+      { id: 'widgets', kind: 'repository' as const, name: 'widgets', repository: 'acme/widgets', root: '' },
+      { id: 'notes', kind: 'directory' as const, name: '我的笔记', root: 'D:\\notes' },
+    ],
+    selectedTarget: 'widgets',
     // A working machine by default: a git new enough for the worker configuration, with an upgrade available.
     git: { version: '2.43.0', outdated: false, minimum: '2.32', plan: { command: 'brew upgrade git', by: 'brew' } },
     setup: { machine: MACHINE, problem: null, feishuProblem: null,
@@ -361,6 +371,15 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
     outdated: server.git.outdated }
     if (server.gitUpgrade) return server.gitUpgrade(answer)
     return answer } },
+  // A workbench request is turned into a Trigger; the panel never opens a Ticket itself.
+  'POST workbench/requests': { body: true, answer: ({ body }) => ({ accepted: true, triggerId: `workbench:${String(body.id)}`,
+    target: { id: String(body.target ?? 'acme'), kind: 'repository' as const } }) },
+  'GET targets': { answer: () => ({ items: server.targets, selected: server.selectedTarget, watched: 'acme/widgets' }) },
+  'DELETE targets/:id': { answer: ({ params }) => {
+    server.targets = server.targets.filter(item => item.id !== params.id)
+    if (server.selectedTarget === params.id) server.selectedTarget = ''
+    return { items: server.targets, selected: server.selectedTarget }
+  } },
   'PUT settings/:block': { body: true, answer: ({ params: { block }, body }) => {
     const source = block.startsWith('source:') ? KINDS.find(kind => `source:${kind.kind}` === block) : undefined
     if (!['policy', 'eval', 'executor'].includes(block) && !source) return block.startsWith('source:') ? refuse(404, 'Source not found')

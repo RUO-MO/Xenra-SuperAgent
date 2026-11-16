@@ -45,8 +45,9 @@ it('returns to the exact page after a remount of the main panel', async () => {
 
 it('shows domain terms in the interface language only and lists both languages in the (?) glossary', async () => {
   await mount(en)
-  // Three tabs answer three questions; the diagnostic views live under Settings rather than in the navigation.
-  expect(all('[role="tab"]').map(tab => tab.textContent)).toEqual(['Home', 'Tickets', 'Settings'])
+  // Four tabs answer four questions; the diagnostic views live under Settings rather than in the navigation. The workbench
+  // console sits first so asking for work is the nearest click, while Home stays the landing page.
+  expect(all('[role="tab"]').map(tab => tab.textContent)).toEqual(['Workbench', 'Home', 'Tickets', 'Settings'])
   await click('Glossary')
   const dialog = document.querySelector('[role="dialog"]')!
   const row = [...dialog.querySelectorAll('tr')].find(item => item.textContent?.startsWith('Ticket'))!

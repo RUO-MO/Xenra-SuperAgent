@@ -24,7 +24,7 @@ it('answers what needs a person first: the pending Tickets, then the problems, w
   await mount()
   expect(tab(zh['tab.home']).getAttribute('aria-selected')).toBe('true')
   // Three tabs, because the panel answers three questions; the diagnostic views live under Settings.
-  expect(all('[role="tab"]').map(tab => tab.textContent)).toEqual(['首页', '工单', '设置'])
+  expect(all('[role="tab"]').map(tab => tab.textContent)).toEqual(['工作台', '首页', '工单', '设置'])
   expect(status()).toBe(zh.homeStatusPerson.replace('{count}', '2'))
   // Only the sections that have something to say: no last-day counts and no executor numbers until asked for.
   expect(all('.dt-section-title').map(title => title.textContent)).toEqual(['系统问题2', '待处理工单2查看全部工单'])
@@ -219,7 +219,7 @@ it('words a refused retry in the interface language by its code', async () => {
 it('shows Home in English', async () => {
   await mount(en)
   expect(status()).toBe(en.homeStatusPerson.replace('{count}', '2'))
-  expect(all('[role="tab"]').map(tab => tab.textContent)).toEqual(['Home', 'Tickets', 'Settings'])
+  expect(all('[role="tab"]').map(tab => tab.textContent)).toEqual(['Workbench', 'Home', 'Tickets', 'Settings'])
   expect(all('.dt-section-title').map(title => title.textContent)).toEqual([`${en.problems}2`, `${en.pendingTickets}2${en.seeAllTickets}`])
   expect(all('.dt-cards .dt-ticket-stage').map(item => item.textContent)).toEqual([en['stage.answer'], en['stage.failed']])
   document.querySelector<HTMLDetailsElement>('.dt-home-more')!.open = true
@@ -310,7 +310,7 @@ it('replaces the panel with the first-run guide while an installation is unconfi
   expect(server.settings.executor.directory).toBe('/srv/work')
   // The guide is gone, and the panel it was standing in for is back on Home.
   expect(document.querySelector('.dt-wizard')).toBeNull()
-  expect(all('[role="tab"]').map(tab => tab.textContent)).toEqual(['首页', '工单', '设置'])
+  expect(all('[role="tab"]').map(tab => tab.textContent)).toEqual(['工作台', '首页', '工单', '设置'])
   expect(tab(zh['tab.home']).getAttribute('aria-selected')).toBe('true')
   expect(status()).toBe(zh.homeStatusPerson.replace('{count}', '2'))
 })
@@ -367,7 +367,7 @@ it('goes back a step in the guide without saving, and can be skipped or leave fo
   // would finish the setup stay one tab away.
   await click(zh.wizardSkip)
   expect(document.querySelector('.dt-wizard')).toBeNull()
-  expect(all('[role="tab"]').map(tab => tab.textContent)).toEqual(['首页', '工单', '设置'])
+  expect(all('[role="tab"]').map(tab => tab.textContent)).toEqual(['工作台', '首页', '工单', '设置'])
   expect(status()).toBe(zh.homeStatusPerson.replace('{count}', '2'))
   // Nothing was saved to get out of the way, so the installation is still unconfigured.
   expect(server.requests.filter(request => request.method === 'PUT')).toHaveLength(saves)

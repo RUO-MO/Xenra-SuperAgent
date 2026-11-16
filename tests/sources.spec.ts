@@ -1096,6 +1096,8 @@ describe.skipIf(!POSIX)('feishu event consumer', () => {
     await vi.waitFor(() => expect(store.triggers.get(feishuTriggerId('om_3'))).toBeDefined(), until)
     expect(['om_1', 'om_2'].map(id => store.triggers.get(feishuTriggerId(id))?.meta.direct)).toEqual([false, true])
     expect(store.get(KV.feishu.chats)).toEqual({ oc_group: false, oc_dm: true })
+    // The malformed line stays reported even though the consumer's own `ready` line arrives after it: a ready consumer is
+    // only news while nothing is wrong, so a later `ready` must not erase a failure the panel depends on.
     expect(health.feishu).toMatchObject({ state: 'error', detail: expect.stringContaining('JSON') })
     controller.abort(); await running; store.close()
   }, 20_000)

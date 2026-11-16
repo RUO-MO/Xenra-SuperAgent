@@ -11,6 +11,10 @@
     # Giving the card its CLI is all that turns it on; no profile edit is needed.
     - id: xenra-superagent-feishu
       name: xenra-superagent/feishu-watch
+    # The workbench is a request entry, not a work target: it registers a Source kind that turns a console request into a
+    # Trigger. It has no external service to poll, so it needs no CLI or credentials and is always ready.
+    - id: xenra-superagent-workbench
+      name: xenra-superagent/workbench
     # The agent preset of every Executor Session (WORKER_PRESET in src/app/sessions.ts); the main Session has its own, below.
     # It is DSH's `standard` preset with only what a worker needs, and a shell whose foreground command moves to a background job
     # after 5 seconds, so a long command does not hold back a person's message, which the Session takes at its next step. Left

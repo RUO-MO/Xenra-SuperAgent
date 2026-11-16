@@ -216,6 +216,8 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `src/sources/github-channel.ts` | The GitHub Channel: `sendGithub` and `githubLink` |
 | `src/sources/github-read.ts` | `readGithub`, `pullChecks`, `readRepositoryPath`, `githubThreadContext` and the CI summaries |
 | `src/sources/feishu.ts` | The Feishu kind and plugin entry, exported as `./feishu-watch`: configuration, Policy part with chat sync, and environment variables |
+| `src/sources/workbench.ts` | The workbench entry kind and plugin, exported as `./workbench`: builds a console request into a Trigger, its scope and variables; owns no repository or directory |
+| `src/workspace/targets.ts` | Workspace targets: repository and local-folder kinds, their validation (absolute path, not inside the state directory, no nesting between targets), the default target and id generation; the watched repository stays a single deployment-level fact |
 | `src/sources/feishu-trigger.ts` | One rule that turns Feishu events, history pages and topic pages into Triggers |
 | `src/sources/feishu-loops.ts` | The Feishu loops: the event consumer, history recovery, chat name refresh, subscribed-thread polling |
 | `src/sources/feishu-channel.ts` | The Feishu Channel: `sendFeishu` and `feishuLink` |
@@ -228,6 +230,7 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `src/client/api.ts` | `caller`, `ApiError`, `usePoll` and the type aliases of the views |
 | `src/client/route.ts` | `TABS`, `SETTINGS_GROUPS`, `parseRoute`, `initialLocation` and `remember` |
 | `src/client/home.tsx` | Home: what waits for you first, then one line of status; the Executor counts fold away |
+| `src/client/workbench.tsx` | Workbench: the shared project, the request and its scope, and the requests submitted this session |
 | `src/client/setup-wizard.tsx` | The first-run guide: repository, account, who may ask and the work directory, each step writing its settings block |
 | `src/client/source.tsx` | The Source status and the Source settings cards |
 | `src/client/trigger.tsx` | The Trigger status: Threads under a filter |
@@ -252,7 +255,7 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `src/client/client.css` | The stylesheet, written against DSH's `--dsw-alias-*` tokens, one rule per line |
 | `src/client/css.d.ts` | The type declaration for `?raw` stylesheet imports |
 
-`src/sources/github.ts` and `src/sources/feishu.ts` are also the entries of the two Source plugins, built by `tsdown.config.ts` and exported in `package.json` as `./github-watch` and `./feishu-watch`. The bundle's `cordis.patch.yml` inserts the three plugins, with Feishu disabled.
+`src/sources/github.ts`, `src/sources/feishu.ts` and `src/sources/workbench.ts` are also the entries of the three Source plugins, built by `tsdown.config.ts` and exported in `package.json` as `./github-watch`, `./feishu-watch` and `./workbench`. The bundle's `cordis.patch.yml` inserts four plugin rows; Feishu and the workbench are on by default, and Feishu stays idle until it has a bot CLI.
 
 ## Tests
 
@@ -295,6 +298,9 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `tests/model-surface.spec.ts` | Everything a model reads (tools, prompts, skills, inputs) against the schemas, the glossary and size budgets |
 | `tests/deployment.spec.ts` | Plugin configuration, `resolveDeployment`, `resolveFeishuBot` and setup problems |
 | `tests/environment.spec.ts` | The shims, `worker-gitconfig`, foreign files and directory checks |
+| `tests/workbench.spec.ts` | Building a workbench request into a Trigger, threading by target, and the HTTP route's dedupe and refusals |
+| `tests/targets.spec.ts` | Workspace targets: telling the two kinds apart, refusing a bad or nested path, the default target and id generation |
+| `tests/panel-workbench.spec.tsx` | The Workbench tab: the shared project, submitting a request, and a blocking deployment problem taken over by the guide |
 | `tests/profile.spec.ts` | Telling an uninstall from a restart through the profile manifest: a restart keeps the state directory, an uninstall clears it, an unreadable manifest deletes nothing |
 | `tests/index.spec.ts` | The plugin entry: `Config`, `machineOf` and the restart callback |
 | `tests/service-script.spec.ts` | `scripts/xenra-superagent` against fake `ps`, `tmux`, `dsh` and a fake health endpoint |

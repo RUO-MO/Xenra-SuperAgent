@@ -9,6 +9,7 @@ import type { SourceStatusView } from './views/sources.ts'
 import type { DecisionListView, SearchView, ThreadDetailView, ThreadListView } from './views/threads.ts'
 import type { TicketListView } from './views/tickets.ts'
 import type { Target, TargetKind } from '../workspace/targets.ts'
+import type { UpdateState } from './update-check.ts'
 
 export const TICKET_FILTERS = ['open', 'person', 'working', 'idle', 'ended'] as const
 export const THREAD_FILTERS = ['subscribed', 'evaluating', 'recent', 'all'] as const
@@ -43,6 +44,8 @@ export interface Api {
   /** Submitting a request from the workbench console. The server turns it into a Trigger; it never opens a Ticket itself. */
   'POST workbench/requests': { body: { id: string; actor: string; text: string; scope?: string; target?: string };
     response: { accepted: boolean; reason?: string; triggerId: string; target: { id: string; kind: TargetKind } } }
+  /** Whether a newer version exists, asked differently for a linked checkout and a GitHub install. */
+  'GET update': { response: UpdateState | undefined }
   /** The places a request may act on, and the one repository the agent watches. */
   'GET targets': { response: { items: Target[]; selected: string; watched: string } }
   'DELETE targets/:id': { response: { items: Target[]; selected: string } }

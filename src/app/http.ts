@@ -19,6 +19,7 @@ import type { DshExecutor } from '../executor/dsh.ts'
 import type { Health } from '../sources/host.ts'
 import { workbenchTrigger } from '../sources/workbench.ts'
 import { targetOf } from '../workspace/targets.ts'
+import { updateState } from './update-check.ts'
 import type { SourceRegistry } from '../sources/registry.ts'
 import type { Sessions } from './sessions.ts'
 import type { Store } from './store.ts'
@@ -236,6 +237,9 @@ function routes(runtime: HttpHost): Routes {
       // A successful command still needs the recheck to pass, so the answer reports both facts separately.
       return { ...result, version, outdated: version === undefined || !atLeast(version, GIT_MINIMUM) }
     },
+    // Whether a newer version exists depends on how this plugin was installed: a linked checkout is judged by its own
+    // upstream branch, a GitHub install by the commit the remote now has. Nothing here installs anything.
+    'GET update': async () => updateState(process.env.DSH_PROFILE_DIR, 'xenra-superagent'),
     // The targets a request may act on: several repositories and local directories, of which one repository is watched.
     'GET targets': () => {
       const config = runtime.store.settings().executor.targets

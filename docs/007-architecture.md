@@ -218,6 +218,7 @@ window.__ModuleLoader__.load({ id: "xenra-superagent", factory: (require) => { /
 | `src/sources/feishu.ts` | 飞书种类与插件入口，导出为 `./feishu-watch`：配置、策略部分（含群同步）与环境变量 |
 | `src/sources/workbench.ts` | 工作台入口种类与插件入口，导出为 `./workbench`：把控制台请求构造成 Trigger、范围与环境变量；不拥有任何仓库或目录 |
 | `src/workspace/targets.ts` | 工作区目标：仓库型与本地文件夹型两种，校验（绝对路径、不落在状态目录、目标之间不嵌套）、默认目标与 id 生成；被监听的那个仓库仍是部署级的单值 |
+| `src/app/update-check.ts` | 检查更新：本地链接安装按自己仓库的上游分支判断，GitHub 安装按远端提交判断；只读比较，不拉取、不安装 |
 | `src/sources/feishu-trigger.ts` | 飞书事件、历史页与话题页统一翻译成触发 |
 | `src/sources/feishu-loops.ts` | 飞书的循环：事件消费者、历史补收、群名刷新、订阅线程轮询 |
 | `src/sources/feishu-channel.ts` | 飞书渠道：`sendFeishu` 与 `feishuLink` |
@@ -231,6 +232,7 @@ window.__ModuleLoader__.load({ id: "xenra-superagent", factory: (require) => { /
 | `src/client/route.ts` | `TABS`、`SETTINGS_GROUPS`、`parseRoute`、`initialLocation`、`remember` |
 | `src/client/home.tsx` | 首页：先是等你处理的事，其次是一句话的运行状态；执行器计数收在折叠区 |
 | `src/client/workbench.tsx` | 工作台：显示共用的项目、写要求与范围、提交后显示本次会话提交过的要求 |
+| `src/client/update-status.tsx` | 检查更新一节：说明这次安装是本地链接还是 GitHub 安装，显示领先/落后/有未提交改动，并给出下一步该怎么更新 |
 | `src/client/setup-wizard.tsx` | 首次配置引导：仓库、账号、可以派活的人、工作目录四步，每步直接写对应的设置块 |
 | `src/client/source.tsx` | 来源状态与来源设置卡片 |
 | `src/client/trigger.tsx` | 触发状态：按过滤条件列出的线程 |
@@ -300,6 +302,8 @@ window.__ModuleLoader__.load({ id: "xenra-superagent", factory: (require) => { /
 | `tests/environment.spec.ts` | 包装脚本、`worker-gitconfig`、外来文件与目录检查 |
 | `tests/workbench.spec.ts` | 工作台请求构造为 Trigger、按目标聚合线程、HTTP 路由的去重与拒绝 |
 | `tests/targets.spec.ts` | 工作区目标：两种类型的区分、非法路径与嵌套拒绝、默认目标与 id 生成 |
+| `tests/update-check.spec.ts` | 检查更新：安装写法归类、按上游分支比较领先/落后/分叉、脏工作区先于「落后」、无上游时如实说无法判断 |
+| `tests/panel-update.spec.tsx` | 更新面板：区分本地链接与 GitHub 安装，脏工作区与无法判断各自的措辞 |
 | `tests/panel-workbench.spec.tsx` | 工作台标签页：显示共用项目、提交要求，以及阻塞性部署问题由引导接管 |
 | `tests/profile.spec.ts` | 从 profile 清单区分卸载与重启：重启保留状态目录，卸载清理，读不到清单时不删 |
 | `tests/index.spec.ts` | 插件入口：`Config`、`machineOf` 与重启回调 |

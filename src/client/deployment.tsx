@@ -10,6 +10,7 @@ import type { SetupView } from './api.ts'
 import { Input } from './controls.tsx'
 import { SaveBar, useDraft } from './draft.tsx'
 import { GitRepair } from './git-repair.tsx'
+import { UpdateStatus } from './update-status.tsx'
 import { PanelProvider, usePanel, usePanelData } from './provider.tsx'
 import { Field, Fields } from './settings-kit.tsx'
 import { setupText, type T } from './text.ts'
@@ -86,6 +87,7 @@ export function DeploymentPage({ setup, form, accounts: showAccounts }: { setup:
           [t('deploymentAgent'), accounts ? `@${accounts.agent}` : '—'], [t('deploymentFeishu'), feishu]]} />
         <Hint>{t('deploymentAccountsWhere')}</Hint>
       </Section>}
+      <UpdateStatus />
       <Section title={t('deploymentMachine')}>
         {readOnlyHint && <Hint>{readOnlyHint}</Hint>}
         {/* The git the workers run, with the repair this machine offers, sits with the other machine-level facts. */}

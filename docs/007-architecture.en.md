@@ -217,6 +217,7 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `src/sources/github-read.ts` | `readGithub`, `pullChecks`, `readRepositoryPath`, `githubThreadContext` and the CI summaries |
 | `src/sources/feishu.ts` | The Feishu kind and plugin entry, exported as `./feishu-watch`: configuration, Policy part with chat sync, and environment variables |
 | `src/sources/workbench.ts` | The workbench entry kind and plugin, exported as `./workbench`: builds a console request into a Trigger, its scope and variables; owns no repository or directory |
+| `src/workspace/targets.ts` | Workspace targets: repository and local-folder kinds, their validation (absolute path, not inside the state directory, no nesting between targets), the default target and id generation; the watched repository stays a single deployment-level fact |
 | `src/sources/feishu-trigger.ts` | One rule that turns Feishu events, history pages and topic pages into Triggers |
 | `src/sources/feishu-loops.ts` | The Feishu loops: the event consumer, history recovery, chat name refresh, subscribed-thread polling |
 | `src/sources/feishu-channel.ts` | The Feishu Channel: `sendFeishu` and `feishuLink` |
@@ -298,6 +299,7 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `tests/deployment.spec.ts` | Plugin configuration, `resolveDeployment`, `resolveFeishuBot` and setup problems |
 | `tests/environment.spec.ts` | The shims, `worker-gitconfig`, foreign files and directory checks |
 | `tests/workbench.spec.ts` | Building a workbench request into a Trigger, threading by target, and the HTTP route's dedupe and refusals |
+| `tests/targets.spec.ts` | Workspace targets: telling the two kinds apart, refusing a bad or nested path, the default target and id generation |
 | `tests/panel-workbench.spec.tsx` | The Workbench tab: the shared project, submitting a request, and a blocking deployment problem taken over by the guide |
 | `tests/profile.spec.ts` | Telling an uninstall from a restart through the profile manifest: a restart keeps the state directory, an uninstall clears it, an unreadable manifest deletes nothing |
 | `tests/index.spec.ts` | The plugin entry: `Config`, `machineOf` and the restart callback |

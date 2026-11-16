@@ -217,6 +217,7 @@ window.__ModuleLoader__.load({ id: "xenra-superagent", factory: (require) => { /
 | `src/sources/github-read.ts` | `readGithub`、`pullChecks`、`readRepositoryPath`、`githubThreadContext` 与 CI 摘要 |
 | `src/sources/feishu.ts` | 飞书种类与插件入口，导出为 `./feishu-watch`：配置、策略部分（含群同步）与环境变量 |
 | `src/sources/workbench.ts` | 工作台入口种类与插件入口，导出为 `./workbench`：把控制台请求构造成 Trigger、范围与环境变量；不拥有任何仓库或目录 |
+| `src/workspace/targets.ts` | 工作区目标：仓库型与本地文件夹型两种，校验（绝对路径、不落在状态目录、目标之间不嵌套）、默认目标与 id 生成；被监听的那个仓库仍是部署级的单值 |
 | `src/sources/feishu-trigger.ts` | 飞书事件、历史页与话题页统一翻译成触发 |
 | `src/sources/feishu-loops.ts` | 飞书的循环：事件消费者、历史补收、群名刷新、订阅线程轮询 |
 | `src/sources/feishu-channel.ts` | 飞书渠道：`sendFeishu` 与 `feishuLink` |
@@ -298,6 +299,7 @@ window.__ModuleLoader__.load({ id: "xenra-superagent", factory: (require) => { /
 | `tests/deployment.spec.ts` | 插件配置、`resolveDeployment`、`resolveFeishuBot` 与 setup 问题 |
 | `tests/environment.spec.ts` | 包装脚本、`worker-gitconfig`、外来文件与目录检查 |
 | `tests/workbench.spec.ts` | 工作台请求构造为 Trigger、按目标聚合线程、HTTP 路由的去重与拒绝 |
+| `tests/targets.spec.ts` | 工作区目标：两种类型的区分、非法路径与嵌套拒绝、默认目标与 id 生成 |
 | `tests/panel-workbench.spec.tsx` | 工作台标签页：显示共用项目、提交要求，以及阻塞性部署问题由引导接管 |
 | `tests/profile.spec.ts` | 从 profile 清单区分卸载与重启：重启保留状态目录，卸载清理，读不到清单时不删 |
 | `tests/index.spec.ts` | 插件入口：`Config`、`machineOf` 与重启回调 |

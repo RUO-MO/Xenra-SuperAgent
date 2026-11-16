@@ -18,6 +18,7 @@ import type { Deployment, Machine } from '../deployment.ts'
 import type { DshExecutor } from '../executor/dsh.ts'
 import type { Health } from '../sources/host.ts'
 import { workbenchTrigger } from '../sources/workbench.ts'
+import { targetOf } from '../workspace/targets.ts'
 import type { SourceRegistry } from '../sources/registry.ts'
 import type { Sessions } from './sessions.ts'
 import type { Store } from './store.ts'
@@ -159,6 +160,8 @@ const WorkbenchRequest = z.object({
   actor: z.string().trim().min(1).max(200),
   text: z.string().trim().min(1).max(20_000),
   scope: z.string().trim().max(500).optional(),
+  /** The target to act on; omitted means the selected one, and with none selected, the watched repository. */
+  target: z.string().trim().max(60).optional(),
 }).strict()
 
 /**
@@ -233,17 +236,42 @@ function routes(runtime: HttpHost): Routes {
       // A successful command still needs the recheck to pass, so the answer reports both facts separately.
       return { ...result, version, outdated: version === undefined || !atLeast(version, GIT_MINIMUM) }
     },
+    // The targets a request may act on: several repositories and local directories, of which one repository is watched.
+    'GET targets': () => {
+      const config = runtime.store.settings().executor.targets
+      const watched = runtime.configured() ? runtime.deployment.repository : ''
+      return { items: config.items, selected: config.selected, watched }
+    },
+    'DELETE targets/:id': ({ params }) => {
+      const settings = runtime.store.settings()
+      const config = settings.executor.targets
+      if (!config.items.some(item => item.id === params.id)) throw new RouteError(404, 'Target not found')
+      const items = config.items.filter(item => item.id !== params.id)
+      // Dropping the selected target leaves no default rather than a dangling one.
+      const selected = config.selected === params.id ? '' : config.selected
+      runtime.store.saveSettings({ ...settings, executor: { ...settings.executor, targets: { items, selected } } })
+      return { items, selected }
+    },
     // A workbench request is just another Trigger. Authorization and assessment stay with Policy and Eval: this route
     // deliberately does not open a Ticket. `id` comes from the caller, so a retry of the same submission is a no-op.
     'POST workbench/requests': async ({ body }) => {
       const request = WorkbenchRequest.parse(await body())
       if (!runtime.configured()) throw new RouteError(400, 'Setup is not complete')
-      const target = runtime.deployment.repository
-      if (!target) throw new RouteError(400, 'No repository is configured')
-      const trigger = workbenchTrigger({ ...request, at: new Date().toISOString() }, target)
+      const config = runtime.store.settings().executor.targets
+      // A named target must exist: a request can never silently act on something other than what the person picked.
+      const target = request.target ? targetOf(config, request.target) : (config.selected ? targetOf(config, config.selected) : undefined)
+      if (request.target && !target) throw new RouteError(400, 'Unknown target')
+      // With no targets registered the request still works: it acts on the watched repository, which is what a fresh
+      // installation has before anyone registers anything.
+      const acted = target ?? (runtime.deployment.repository
+        ? { id: runtime.deployment.repository, kind: 'repository' as const, name: '', repository: runtime.deployment.repository, root: '' }
+        : undefined)
+      if (!acted) throw new RouteError(400, 'No repository is configured')
+      const trigger = workbenchTrigger({ ...request, at: new Date().toISOString() }, acted.id)
       const result: ReceiveResult = runtime.engine.receive(trigger)
       if (result === 'stored') runtime.requestPass()
-      return { accepted: result === 'stored', ...(result !== 'stored' ? { reason: result } : {}), triggerId: trigger.id }
+      return { accepted: result === 'stored', ...(result !== 'stored' ? { reason: result } : {}), triggerId: trigger.id,
+        target: { id: acted.id, kind: acted.kind } }
     },
     'PUT settings/:block': async ({ params, body }) => {
       const block = SettingsBlockSchema.parse(params.block)

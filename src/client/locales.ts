@@ -118,7 +118,11 @@ const TEXT = {
   'tab.evals': ['判断记录', 'Assessments'],
   // Workbench: a request entry that acts on the same repository as GitHub and Feishu requests.
   workbenchTarget: ['这次要求作用于', 'This request acts on'],
-  workbenchTargetHint: ['GitHub Issue、飞书消息和工作台要求都作用在这同一个项目上；入口不同，干活的地方相同。', 'A GitHub Issue, a Feishu message and a workbench request all act on this same project: different entries, one place to work.'],
+  workbenchTargetHint: ['选一个目标：GitHub 仓库会在那里提交改动并可开 PR，本地文件夹则直接改里面的文件。监听哪个仓库是另一回事，见设置。', 'Pick a target: a GitHub repository receives the changes and can become a pull request, while a local folder is edited in place. Which repository is watched is a separate setting.'],
+  workbenchKindRepository: ['GitHub 仓库', 'GitHub repository'],
+  workbenchKindDirectory: ['本地文件夹', 'Local folder'],
+  workbenchWatched: ['正在监听', 'Watched'],
+  workbenchWatchedHint: ['只有一项仓库处于监听状态：GitHub 与飞书的请求都来自它。其余目标只能从工作台提要求。', 'Only one repository is watched: GitHub and Feishu requests come from it. Every other target receives requests from the workbench alone.'],
   workbenchSharedTarget: ['与其他入口共用', 'Shared with other entries'],
   workbenchSetupRequired: ['配置还没完成，先按首次配置引导把项目设置好，再从工作台提要求。', 'Setup is not finished yet. Complete the first-run guide before making a request from the workbench.'],
   workbenchRequest: ['写下要求', 'Write a request'],

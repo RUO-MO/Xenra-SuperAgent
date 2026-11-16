@@ -117,6 +117,21 @@ declare const SettingsSchema: z.ZodObject<{
     directory: z.ZodDefault<z.ZodString>;
     prepare: z.ZodDefault<z.ZodString>;
     blockedCommands: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    targets: z.ZodDefault<z.ZodObject<{
+      items: z.ZodDefault<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+        id: z.ZodString;
+        kind: z.ZodLiteral<"repository">;
+        name: z.ZodDefault<z.ZodString>;
+        repository: z.ZodString;
+        root: z.ZodDefault<z.ZodString>;
+      }, z.core.$strict>, z.ZodObject<{
+        id: z.ZodString;
+        kind: z.ZodLiteral<"directory">;
+        name: z.ZodDefault<z.ZodString>;
+        root: z.ZodString;
+      }, z.core.$strict>], "kind">>>;
+      selected: z.ZodDefault<z.ZodString>;
+    }, z.core.$strict>>;
   }, z.core.$strict>>;
 }, z.core.$strict>;
 type Settings = z.infer<typeof SettingsSchema>;
@@ -183,6 +198,21 @@ declare class SourceRegistry implements SourceScope {
       directory: string;
       prepare: string;
       blockedCommands: string[];
+      targets: {
+        items: ({
+          id: string;
+          kind: "repository";
+          name: string;
+          repository: string;
+          root: string;
+        } | {
+          id: string;
+          kind: "directory";
+          name: string;
+          root: string;
+        })[];
+        selected: string;
+      };
     };
   }): (SourceInstance & {
     installed: boolean;
@@ -228,6 +258,21 @@ declare class SourceRegistry implements SourceScope {
       directory: string;
       prepare: string;
       blockedCommands: string[];
+      targets: {
+        items: ({
+          id: string;
+          kind: "repository";
+          name: string;
+          repository: string;
+          root: string;
+        } | {
+          id: string;
+          kind: "directory";
+          name: string;
+          root: string;
+        })[];
+        selected: string;
+      };
     };
   }): SourceInstance<C> | undefined;
   validate(id: string, value: {
@@ -285,6 +330,21 @@ declare class SourceRegistry implements SourceScope {
       directory: string;
       prepare: string;
       blockedCommands: string[];
+      targets: {
+        items: ({
+          id: string;
+          kind: "repository";
+          name: string;
+          repository: string;
+          root: string;
+        } | {
+          id: string;
+          kind: "directory";
+          name: string;
+          root: string;
+        })[];
+        selected: string;
+      };
     };
   }): {
     admission: Record<string, AdmissionRow>;
@@ -337,6 +397,21 @@ declare class SourceRegistry implements SourceScope {
       directory: string;
       prepare: string;
       blockedCommands: string[];
+      targets: {
+        items: ({
+          id: string;
+          kind: "repository";
+          name: string;
+          repository: string;
+          root: string;
+        } | {
+          id: string;
+          kind: "directory";
+          name: string;
+          root: string;
+        })[];
+        selected: string;
+      };
     };
   }): boolean;
   /** Environment variable declarations for every installed kind, whether enabled or disabled. */
@@ -385,6 +460,21 @@ declare class SourceRegistry implements SourceScope {
       directory: string;
       prepare: string;
       blockedCommands: string[];
+      targets: {
+        items: ({
+          id: string;
+          kind: "repository";
+          name: string;
+          repository: string;
+          root: string;
+        } | {
+          id: string;
+          kind: "directory";
+          name: string;
+          root: string;
+        })[];
+        selected: string;
+      };
     };
   }): {
     kind: SourceKind<Record<string, unknown>>;
@@ -446,6 +536,21 @@ declare class SourceRegistry implements SourceScope {
       directory: string;
       prepare: string;
       blockedCommands: string[];
+      targets: {
+        items: ({
+          id: string;
+          kind: "repository";
+          name: string;
+          repository: string;
+          root: string;
+        } | {
+          id: string;
+          kind: "directory";
+          name: string;
+          root: string;
+        })[];
+        selected: string;
+      };
     };
   }): TriggerContext | undefined;
   scope(input: {
@@ -492,6 +597,21 @@ declare class SourceRegistry implements SourceScope {
       directory: string;
       prepare: string;
       blockedCommands: string[];
+      targets: {
+        items: ({
+          id: string;
+          kind: "repository";
+          name: string;
+          repository: string;
+          root: string;
+        } | {
+          id: string;
+          kind: "directory";
+          name: string;
+          root: string;
+        })[];
+        selected: string;
+      };
     };
   }): ScopeResult;
   /** Falls back to schema defaults and disables the instance when stored configuration fails validation. */

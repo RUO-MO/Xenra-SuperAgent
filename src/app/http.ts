@@ -12,11 +12,12 @@ import { policyVersion } from '../policy.ts'
 import { SettingsConflict, type Settings } from './settings.ts'
 import { SetupError, type SetupProblem } from '../setup.ts'
 import { GIT_MINIMUM, atLeast, gitVersionOf, planUpgrade, upgrade } from './git-upgrade.ts'
-import { UserError, type EngineForPeople, type Ticket } from '../core/index.ts'
+import { UserError, type Engine, type EngineForPeople, type ReceiveResult, type Ticket } from '../core/index.ts'
 import { runAsWorker } from '../infra/environment.ts'
 import type { Deployment, Machine } from '../deployment.ts'
 import type { DshExecutor } from '../executor/dsh.ts'
 import type { Health } from '../sources/host.ts'
+import { workbenchTrigger } from '../sources/workbench.ts'
 import type { SourceRegistry } from '../sources/registry.ts'
 import type { Sessions } from './sessions.ts'
 import type { Store } from './store.ts'
@@ -38,7 +39,8 @@ export interface HttpHost {
   readonly prompts: Pick<Prompts, 'current' | 'version' | 'history' | 'preview' | 'save' | 'defaultChanged'>
   readonly sessions: Pick<Sessions, 'status' | 'notify' | 'delivery'>
   readonly settings: Pick<Settings, 'view' | 'save' | 'pause' | 'sync' | 'refreshLabels'>
-  readonly engine: EngineForPeople
+  /** Engine operations the panel may trigger. `receive` lets the workbench console submit a request as a Trigger. */
+  readonly engine: EngineForPeople & Pick<Engine, 'receive'>
   readonly executor: Pick<DshExecutor, 'activeCount'>
   readonly health: Record<string, Health>
   readonly machine: Machine
@@ -151,6 +153,13 @@ const PromptsQuery = z.object({ revision: count.optional(), offset: count.defaul
 const SourceBlock = z.templateLiteral(['source:', z.string().regex(/^[a-z][a-z0-9-]*$/)])
 const SettingsBlockSchema = z.union([z.enum(['policy', 'eval', 'executor']), SourceBlock])
 const SaveRequest = z.object({ value: z.unknown(), revision: z.number().int().nonnegative() })
+/** A request typed into the workbench console. `id` is client-generated so a double submit deduplicates. */
+const WorkbenchRequest = z.object({
+  id: z.string().trim().min(1).max(200),
+  actor: z.string().trim().min(1).max(200),
+  text: z.string().trim().min(1).max(20_000),
+  scope: z.string().trim().max(500).optional(),
+}).strict()
 
 /**
  * The git that worker sessions run, read through the same subprocess service the workers use so the answer describes the
@@ -223,6 +232,18 @@ function routes(runtime: HttpHost): Routes {
       const version = await gitVersion(runtime)
       // A successful command still needs the recheck to pass, so the answer reports both facts separately.
       return { ...result, version, outdated: version === undefined || !atLeast(version, GIT_MINIMUM) }
+    },
+    // A workbench request is just another Trigger. Authorization and assessment stay with Policy and Eval: this route
+    // deliberately does not open a Ticket. `id` comes from the caller, so a retry of the same submission is a no-op.
+    'POST workbench/requests': async ({ body }) => {
+      const request = WorkbenchRequest.parse(await body())
+      if (!runtime.configured()) throw new RouteError(400, 'Setup is not complete')
+      const target = runtime.deployment.repository
+      if (!target) throw new RouteError(400, 'No repository is configured')
+      const trigger = workbenchTrigger({ ...request, at: new Date().toISOString() }, target)
+      const result: ReceiveResult = runtime.engine.receive(trigger)
+      if (result === 'stored') runtime.requestPass()
+      return { accepted: result === 'stored', ...(result !== 'stored' ? { reason: result } : {}), triggerId: trigger.id }
     },
     'PUT settings/:block': async ({ params, body }) => {
       const block = SettingsBlockSchema.parse(params.block)

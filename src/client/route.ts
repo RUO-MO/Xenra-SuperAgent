@@ -1,10 +1,13 @@
 /**
  * Typed panel routes, route parser, and sessionStorage location history.
  *
- * Three top-level tabs answer the three questions a person actually has: what needs me now (`home`), what is being worked
- * on (`tickets`), and how it is set up (`settings`). The finer-grained views an operator reaches while debugging — Threads
- * and Triggers, Evals and decisions — keep their own routes but live under `advanced`, so the default navigation stays the
- * size of the job rather than the size of the implementation.
+ * Four top-level tabs answer the four questions a person actually has: what needs me now (`home`), what do I want done
+ * (`workbench`), what is being worked on (`tickets`), and how it is set up (`settings`). The finer-grained views an
+ * operator reaches while debugging — Threads and Triggers, Evals and decisions — keep their own routes but live under
+ * `advanced`, so the default navigation stays the size of the job rather than the size of the implementation.
+ *
+ * Home stays the landing page: an unconfigured installation opens the first-run guide from there, and a configured one
+ * leads with what needs a person. The workbench sits first in the tab order so the console is the easiest next click.
  */
 import { THREAD_FILTERS, TICKET_FILTERS, type ThreadFilter, type TicketFilter } from '../app/api.ts'
 import type { SetupPlace } from '../setup.ts'
@@ -12,14 +15,15 @@ import { DECISION_FILTERS, type DecisionFilter } from './api.ts'
 import type { T } from './text.ts'
 
 /** The tabs a person navigates by. `advanced` is one tab holding the diagnostic views. */
-export const TABS = ['home', 'tickets', 'settings'] as const
+export const TABS = ['workbench', 'home', 'tickets', 'settings'] as const
 export type Tab = typeof TABS[number]
 export const SETTINGS_GROUPS = ['source', 'eval', 'execution', 'prompts', 'deployment'] as const
 export type SettingsGroup = typeof SETTINGS_GROUPS[number]
 /** The diagnostic views, reachable from Settings and never shown as a top-level tab of their own. */
 export const ADVANCED_VIEWS = ['threads', 'evals'] as const
 export type AdvancedView = typeof ADVANCED_VIEWS[number]
-export type Route = { page: 'home'; id?: undefined; query?: undefined }
+export type Route = { page: 'workbench'; id?: undefined; query?: undefined }
+  | { page: 'home'; id?: undefined; query?: undefined }
   | { page: 'tickets'; id?: undefined; query: { filter?: TicketFilter } }
   | { page: 'tickets'; id: string; query?: undefined }
   | { page: 'threads'; id?: undefined; query: { filter?: ThreadFilter } }
@@ -46,6 +50,7 @@ export function parseRoute(value: unknown): Route | undefined {
   const text = (name: string) => typeof query?.[name] === 'string' ? query[name] as string : undefined
   const record = typeof id === 'string' && id ? id : undefined
   switch (page) {
+    case 'workbench': return { page }
     case 'home': return { page }
     // A stored route from the six-tab panel keeps working: its overview becomes Home, its execution tab Tickets, and its
     // thread and eval tabs the advanced views under Settings.

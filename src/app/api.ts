@@ -39,7 +39,9 @@ export interface Api {
   'GET git': { response: { version?: string; outdated: boolean; minimum: string
     plan?: { command: string; by: string } } }
   'POST git/upgrade': { response: { ok: boolean; output: string; version?: string; outdated: boolean } }
-  // What an explicit removal took away and what it left, because it was not written by xenra-superagent.
+  /** Submitting a request from the workbench console. The server turns it into a Trigger; it never opens a Ticket itself. */
+  'POST workbench/requests': { body: { id: string; actor: string; text: string; scope?: string };
+    response: { accepted: boolean; reason?: string; triggerId: string } }
   'PUT settings/:block': { body: { value: unknown; revision: number }; response: { revision: number; restarting: boolean } }
   'GET policy/history': { response: HistoryView }
   'POST policy-sync/:id': { response: { policy: unknown } }

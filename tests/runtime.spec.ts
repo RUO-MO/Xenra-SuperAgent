@@ -22,6 +22,7 @@ import { SettingsSchema, policyVersion, type SettingsOrigin } from '../src/polic
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { feishuKind } from '../src/sources/feishu.ts'
 import { githubKind, pollRound } from '../src/sources/github.ts'
+import { workbenchKind, workbenchTrigger } from '../src/sources/workbench.ts'
 import { CliError, Commands } from '../src/infra/commands.ts'
 import { UserError, key, runningAssignment, said, threadKey, waitsForPerson, type Trigger } from '../src/core/index.ts'
 import { feishuTrigger } from '../src/sources/feishu.ts'
@@ -224,6 +225,31 @@ beforeEach(async () => {
   deliveries.mockClear()
 })
 afterEach(async () => { expect(controller.prompt).not.toHaveBeenCalled(); await runtime?.stop(); vi.restoreAllMocks(); rmSync(directory, { recursive: true, force: true }) })
+
+it('takes a workbench request through the same intake as any source, and the Policy still decides who may ask', async () => {
+  runtime.sources.register(workbenchKind)
+  const draft = () => workbenchTrigger({ id: 'r1', actor: 'alice', text: '把设置页的保存按钮改成次要样式',
+    at: '2026-11-16T02:00:00Z', scope: 'src/client/' }, 'acme/widgets')
+  // The console does not bypass authorization: with no workbench allow list, a person on the GitHub list is still a
+  // stranger here, and the request is recorded but never becomes work.
+  expect(await receive(draft())).toBe('stored')
+  expect(relays(runtime.masterId).some(item => item.trigger_id === draft().id)).toBe(false)
+  expect(runtime.store.tickets.list()).toEqual([])
+  // A console request is not a ticket on its own, and its thread is named after the target, so a request from another
+  // entry about the same work meets it there.
+  const stored = runtime.store.triggers.get(draft().id)!
+  expect(stored.threads).toEqual([{ source: 'workbench', id: 'acme/widgets' }])
+  expect(stored.addressed).toBe('direct')
+
+  // Allowing the same person for the workbench is what makes it work, exactly like any other Source.
+  const settings = runtime.store.settings()
+  runtime.store.saveSettings({ ...settings, policy: { ...settings.policy, sources: { ...settings.policy.sources,
+    workbench: { allowed: [{ id: 'alice' }] } } } })
+  const second = workbenchTrigger({ id: 'r2', actor: 'alice', text: '把标题改成中性措辞', at: '2026-11-16T03:00:00Z' },
+    'acme/widgets')
+  expect(await receive(second)).toBe('stored')
+  expect(relays(runtime.masterId).some(item => item.trigger_id === second.id)).toBe(true)
+})
 
 it('relays an explicit member mention as a candidate and creates the ticket, acknowledgement, subscription and worker on accept', async () => {
   const { trigger, ticket, sessionId } = await acceptedTicket()

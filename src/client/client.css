@@ -127,6 +127,11 @@ div.dt-preview-head { color: var(--dsw-alias-label-secondary); }
 .dt-source-toggle:hover { color: var(--dsw-alias-label-primary); }
 .dt-source-toggle:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
 .dt-source > .dt-fieldset > .dt-hint, .dt-source > .dt-fieldset > .dt-error { margin: 0; }
+/* Workbench: one target line and one request form, kept short so the console stays the fastest way to ask for work. */
+.dt-workbench-target { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+.dt-workbench-repo { overflow-wrap: anywhere; }
+.dt-workbench-form { display: flex; flex-direction: column; gap: 12px; }
+.dt-workbench-text { width: 100%; min-height: 96px; resize: vertical; font: inherit; line-height: 20px; padding: 8px 10px; }
 .dt-card-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dt-row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
 .dt-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }

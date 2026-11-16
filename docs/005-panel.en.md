@@ -2,19 +2,28 @@
 
 [中文](005-panel.md) · English
 
-Open **Xenra-SuperAgent** in the DeepSeek Harness Web sidebar (the hammer icon, placed near the top of the sidebar panel list) to supervise the agent. The panel has three tabs only — **Home**, **Tickets**, **Settings** — each answering one concrete question, with everything finer folded inside them. This document builds on [000 Philosophy](000-philosophy.en.md) through [004 Prompts](004-prompts.en.md).
+Open **Xenra-SuperAgent** in the DeepSeek Harness Web sidebar (the hammer icon, placed near the top of the sidebar panel list) to supervise the agent. The panel has four tabs — **Workbench**, **Home**, **Tickets**, **Settings** — each answering one concrete question, with everything finer folded inside them. The Workbench is where a request is written; Home stays the landing page. This document builds on [000 Philosophy](000-philosophy.en.md) through [004 Prompts](004-prompts.en.md).
 
 The panel touches no state directly: it reads and writes through a management API bound to the loopback address only (`/orchestrator/api/`), and each request carries a same-origin marker, so another program beside the page cannot use it to change configuration or stop a Ticket. The host registers those routes before it runs the deployment check, so the panel opens even while setup is failing.
 
-## The three tabs
+## The four tabs
 
 | Tab | Question it answers | Shows |
 | --- | --- | --- |
+| Workbench | What do I want it to do? | The project this request acts on, the request text and an optional scope, the submit button, and the requests submitted this session |
 | Home | Does anything need me now? | One line of status, system problems, the Tickets waiting on you, and a folded block of Executor counts and links to the two diagnostic views |
 | Tickets | How far has one piece of work got? | The Executor's state, the pause control, Tickets filtered by stage, and one Ticket's detail page |
 | Settings | What rules does it work by, which account acts, and in which directory? | Sources (status and cards), Eval, Execution and Prompts, plus **Threads and Triggers** and **Assessments** under the **Advanced views** heading |
 
 The header always carries four things: the title, the search box, the glossary (?) button, and **Open main Session**; that button is disabled until the main Session exists. The panel polls every 5 seconds and backs off to six times that interval while the document is hidden; the current route and settings group are kept in session storage, so a reload returns to the same place.
+
+## Workbench
+
+The workbench is a **request entry**, not a second repository or directory of its own. Its head names the project the request acts on — the same repository configured for the deployment, the one a GitHub Issue or a Feishu message also acts on. Different entries, one place to work.
+
+Write a request, optionally declare its scope, and submit. The server turns that text into an ordinary Trigger, which then takes exactly the same path as any other source: authorization, assessment, Ticket, execution, and reply. **It never opens a Ticket directly** — whether to accept the work and how wide it is stays with Policy and Eval. Submitting the same request twice is deduplicated by the engine.
+
+While setup is incomplete, or a machine-level problem leaves the installation unable to run, the page says so; a blocking deployment problem is taken over by the first-run guide, so a person is not asked to submit work that could never execute. Requests submitted this session are listed only on this page; Tickets, states and results live under **Tickets**.
 
 ## Home
 
@@ -93,7 +102,7 @@ While Tickets subscribe to it, the bottom of the page offers **Unsubscribe**: af
 
 ## The first-run guide
 
-While an installation is unconfigured, the panel body is replaced by the first-run guide and the three tabs are hidden; the header's search, glossary and **Open main Session** stay. It appears when the GitHub Source names no repository, its agent CLI is empty, or that Source's Policy list is empty. **A machine-level problem that leaves the installation unable to run** — git too old, the environment failing, a foreign file in the state directory — is shown at the top of the guide with **Check again** and **Open this machine's settings**, since answering four questions on a machine that cannot execute them is answering for nothing. An installation that is already configured is not hidden behind the guide by such a problem; it returns to the system problems on Home. A Feishu bot problem pauses only that Source: it neither triggers nor blocks the guide and still shows on its own card.
+While an installation is unconfigured, the panel body is replaced by the first-run guide and the four tabs are hidden; the header's search, glossary and **Open main Session** stay. It appears when the GitHub Source names no repository, its agent CLI is empty, or that Source's Policy list is empty. **A machine-level problem that leaves the installation unable to run** — git too old, the environment failing, a foreign file in the state directory — is shown at the top of the guide with **Check again** and **Open this machine's settings**, since answering four questions on a machine that cannot execute them is answering for nothing. An installation that is already configured is not hidden behind the guide by such a problem; it returns to the system problems on Home. A Feishu bot problem pauses only that Source: it neither triggers nor blocks the guide and still shows on its own card.
 
 The four steps build on each other, the current one open and the others showing only their number and title:
 
@@ -138,7 +147,7 @@ Other changes take no confirmation but do state their consequence: a Source fiel
 
 ## Principles
 
-1. **Focus on what matters.** Every element answers the question of one of the three tabs, or it is removed. A number appears only when it changes what the supervisor does.
+1. **Focus on what matters.** Every element answers the question of one of the four tabs, or it is removed. A number appears only when it changes what the supervisor does.
 2. **Precise definitions.** Categories have checkable definitions, are mutually exclusive and cover every case, as the Ticket stages do. A label says whom a row waits for and what it needs, not an internal status code.
 3. **One place per concept.** Tickets belong to Tickets; Sources, rules, the execution environment and prompts belong to Settings; Threads and Triggers and Assessments belong to Settings › Advanced views. Home summarizes these and links to them instead of becoming another detailed view.
 4. **Domain structure.** The panel uses the domain terms. Internal identifiers appear only in folded details, and names replace identifiers where they can be resolved.

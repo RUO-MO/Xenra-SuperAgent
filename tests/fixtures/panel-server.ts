@@ -361,6 +361,8 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
     outdated: server.git.outdated }
     if (server.gitUpgrade) return server.gitUpgrade(answer)
     return answer } },
+  // A workbench request is turned into a Trigger; the panel never opens a Ticket itself.
+  'POST workbench/requests': { body: true, answer: ({ body }) => ({ accepted: true, triggerId: `workbench:${String(body.id)}` }) },
   'PUT settings/:block': { body: true, answer: ({ params: { block }, body }) => {
     const source = block.startsWith('source:') ? KINDS.find(kind => `source:${kind.kind}` === block) : undefined
     if (!['policy', 'eval', 'executor'].includes(block) && !source) return block.startsWith('source:') ? refuse(404, 'Source not found')

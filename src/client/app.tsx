@@ -17,6 +17,7 @@ import { actorName, errorText, reasonLabel, valueLabel, type T, readableMarkers 
 import { ThreadPage } from './thread.tsx'
 import { TicketPage } from './ticket.tsx'
 import { TriggerStatus } from './trigger.tsx'
+import { WorkbenchPage } from './workbench.tsx'
 import { When } from './widgets.tsx'
 
 export interface AppProps {
@@ -161,6 +162,7 @@ function Pages({ route, openTab, deploymentForm, guideDone, onGuideDone }: {
   const page = (() => {
     if (guide) return <SetupGuide onDone={onGuideDone} />
     switch (route.page) {
+      case 'workbench': return <WorkbenchPage />
       case 'home': return <HomePage />
       case 'tickets': return route.id !== undefined ? <TicketPage key={route.id} id={route.id} />
         : state ? <ExecutionStatus filter={route.query?.filter ?? 'open'} state={state} reload={reload} /> : waiting
@@ -186,8 +188,8 @@ function Pages({ route, openTab, deploymentForm, guideDone, onGuideDone }: {
  * The tab a route belongs to. The advanced views are reached from Home and Settings rather than a tab of their own, so
  * the navigation keeps showing the tab a person came from.
  */
-const tabOf = (route: Route): Tab => route.page === 'home' ? 'home' : route.page === 'tickets' ? 'tickets'
-  : route.page === 'settings' ? 'settings' : 'home'
+const tabOf = (route: Route): Tab => route.page === 'workbench' ? 'workbench' : route.page === 'home' ? 'home'
+  : route.page === 'tickets' ? 'tickets' : route.page === 'settings' ? 'settings' : 'home'
 
 /** Root panel component managing route history and shared panel state. */
 export function App({ t, openSession, deploymentForm }: AppProps) {
@@ -204,7 +206,8 @@ export function App({ t, openSession, deploymentForm }: AppProps) {
     stack: replace ? current.stack : [...current.stack, current.route].slice(-20) })), [move])
   const back = useCallback(() => move(current => ({ route: current.stack.at(-1) ?? HOME, stack: current.stack.slice(0, -1) })), [move])
   const openTab = useCallback((tab: Tab) => move(current => ({ stack: [], route: tab === 'settings'
-    ? settingsRoute(lastSettingsGroup(current)) : tab === 'tickets' ? { page: 'tickets', query: {} } : { page: 'home' } })), [move])
+    ? settingsRoute(lastSettingsGroup(current)) : tab === 'tickets' ? { page: 'tickets', query: {} }
+      : tab === 'workbench' ? { page: 'workbench' } : { page: 'home' } })), [move])
   return <PanelProvider t={t} openSession={openSession} navigate={navigate} back={back} backLabel={routeLabel(t, location.stack.at(-1) ?? HOME)}>
     <Pages route={location.route} openTab={openTab} deploymentForm={deploymentForm} guideDone={guideDone}
       onGuideDone={() => setGuideDone(true)} />

@@ -42,6 +42,31 @@ it('shows the request pipeline chain with live 24-hour counts', async () => {
   expect(chain[0]!.querySelector('.dt-wb-chain-value')?.textContent).toBe('12')
 })
 
+it('shows recent requests as a lifecycle tree with expandable stages', async () => {
+  server.lifecycle = [{ key: 'workbench:local', title: '检查项目问题', source: 'workbench', at: '2026-11-17T03:00:00Z',
+    progress: 40, current: 'ticket',
+    steps: [
+      { stage: 'trigger', state: 'done', progress: 100, detail: '检查项目问题' },
+      { stage: 'assessment', state: 'done', progress: 100 },
+      { stage: 'ticket', state: 'ongoing', progress: 50, detail: 'fix-check', ticketId: 't1' },
+      { stage: 'assignment', state: 'idle', progress: 0 },
+      { stage: 'reply', state: 'idle', progress: 0 },
+    ] }]
+  await mount()
+  await click(tab(zh['tab.workbench']))
+  expect(text()).toContain(zh.workbenchFlow)
+  const roots = all('.dt-life-root')
+  expect(roots).toHaveLength(1)
+  expect(roots[0]!.textContent).toContain('检查项目问题')
+  // Stage cards are hidden until the request is expanded.
+  expect(all('.dt-life-stage')).toHaveLength(0)
+  await click(roots[0]!)
+  const stages = all('.dt-life-stage')
+  expect(stages).toHaveLength(5)
+  expect(stages[0]!.textContent).toContain(zh['lifecycle.trigger'])
+  expect(stages[2]!.getAttribute('data-state')).toBe('ongoing')
+})
+
 it('adds a repository target inline and removes it again', async () => {
   await mount()
   await click(tab(zh['tab.workbench']))

@@ -141,6 +141,16 @@ const TEXT = {
   'updateStage.installing': ['安装新版本', 'Installing new version'],
   'updateStage.done': ['完成', 'Done'],
   'updateStage.failed': ['失败', 'Failed'],
+  // Workbench request lifecycle tree.
+  workbenchFlow: ['请求流程', 'Request flow'],
+  workbenchFlowHint: ['最近 24 小时提交的要求，以及各自走到哪一步；点开卡片查看当时的详情。', 'Requests submitted in the last 24 hours and how far each has come; open a card for its details.'],
+  'lifecycle.trigger': ['触发', 'Trigger'],
+  'lifecycle.assessment': ['研判', 'Assessment'],
+  'lifecycle.ticket': ['工单', 'Ticket'],
+  'lifecycle.assignment': ['派工', 'Assignment'],
+  'lifecycle.reply': ['回复', 'Reply'],
+  lifecycleOpen: ['查看详情', 'Open details'],
+  lifecycleNone: ['还没有提交过要求。', 'No requests yet.'],
   // Workbench: a request entry that acts on the target a person picks, which may be a repository or a local folder.
   workbenchTarget: ['这次要求作用于', 'This request acts on'],
   workbenchTargetHint: ['选一个目标：GitHub 仓库会在那里提交改动并可开 PR，本地文件夹则直接改里面的文件。监听哪个仓库是另一回事，见设置。', 'Pick a target: a GitHub repository receives the changes and can become a pull request, while a local folder is edited in place. Which repository is watched is a separate setting.'],

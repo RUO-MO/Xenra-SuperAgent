@@ -127,46 +127,22 @@ it('gives the focus back to the field that had it once a block\'s save ends', as
   expect(document.activeElement).toBe(input)
 })
 
-it('lists the four everyday settings groups, then the advanced views, and opens each group from its status', async () => {
+it('lists the four everyday settings groups and opens each from its status', async () => {
   await mount()
   await click(tab(zh['tab.settings']))
   // 部署 is still a group, but it is a machine-level page reached from a deployment problem rather than an everyday link.
-  expect(all('.dt-settings-link').map(link => link.textContent)).toEqual(['来源', '评估', '执行', '提示词', zh['tab.threads'],
-    zh['tab.evals']])
-  expect(document.querySelector('.dt-nav-group')?.textContent).toBe(zh.tabAdvanced)
+  // The advanced Threads/Assessments views now live in the workbench's lifecycle tree, not in this navigation.
+  expect(all('.dt-settings-link').map(link => link.textContent)).toEqual(['来源', '评估', '执行', '提示词'])
+  expect(document.querySelector('.dt-nav-group')).toBeNull()
   expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.source'])
   for (const [name, group] of [['来源', zh['settingsGroup.source']], ['评估', zh['settingsGroup.eval']],
     ['执行', zh['settingsGroup.execution']]] as const) {
     await click(find(name, '.dt-settings-link'))
     expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(group)
   }
-  // The Threads status has no settings, so its status head offers none.
-  await click(find(zh['tab.threads'], '.dt-settings-link'))
-  expect(all('.dt-status-head button').map(button => button.textContent)).not.toContain(zh['tab.settings'])
   await click(find(zh['settingsGroup.prompts'], '.dt-settings-link'))
   await remount()
   await click(tab(zh['tab.settings']))
-  // The last group opened is remembered, and the advanced view gives way to it.
+  // The last group opened is remembered.
   expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.prompts'])
-})
-
-it('opens the Threads and Assessments views from Settings, which take over the body and keep the settings navigation', async () => {
-  await mount()
-  await click(tab(zh['tab.settings']))
-  await click(find(zh['tab.threads'], '.dt-settings-link'))
-  // The view is the Threads status, with the settings links still there to step back into configuration.
-  expect(document.querySelector('.dt-settings-title')?.textContent).toBe(zh['tab.threads'])
-  expect(server.requests.some(request => request.path === 'threads?filter=subscribed&limit=20')).toBe(true)
-  expect(all('.dt-settings-nav button').map(link => link.textContent)).toEqual(['来源', '评估', '执行', '提示词', zh['tab.threads'],
-    zh['tab.evals']])
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['tab.threads'])
-  // No settings group is current while an advanced view is open, so nothing in the everyday list looks selected.
-  expect(all('.dt-settings-link[aria-current="page"]')).toHaveLength(1)
-  await click(find(zh['tab.evals'], '.dt-settings-link'))
-  expect(document.querySelector('.dt-settings-title')?.textContent).toBe(zh['tab.evals'])
-  expect(server.requests.some(request => request.path === 'decisions?limit=30&kind=accept,reopen')).toBe(true)
-  // Stepping back into a group leaves the advanced view.
-  await click(find(zh['settingsGroup.source'], '.dt-settings-link'))
-  expect(document.querySelector('.dt-settings-title')?.textContent).toBe(zh['settingsGroup.source'])
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.source'])
 })

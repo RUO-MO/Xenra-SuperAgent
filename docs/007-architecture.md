@@ -221,6 +221,8 @@ window.__ModuleLoader__.load({ id: "xenra-superagent", factory: (require) => { /
 | `src/app/update-check.ts` | 检查更新：本地链接安装按自己仓库的上游分支判断，GitHub 安装按远端提交判断；只读比较，不拉取、不安装 |
 | `src/app/self-reload.ts` | 手动热重载：本地链接安装用 HMR 就地替换改动的模块，GitHub 安装经插件管理器卸载后重装；后台执行并把各阶段写入进度文件，不自动拉取或升级 |
 | `src/app/reload-progress.ts` | 重载进度：把检查/卸载/安装/完成各阶段写入状态目录里的文件，供面板跨 fiber 重启轮询；记录请求 id、步骤计划与当前状态 |
+| `src/app/views/lifecycle.ts` | 请求生命周期视图：按线程聚合触发、研判、工单、派工、回复五个阶段的状态与进度，供工作台的树状流程图展示与钻取 |
+| `src/client/lifecycle.tsx` | 工作台请求流程树：每个根是一份要求，五个子节点是它走过的阶段，带状态点、进度条与进入详情的链接 |
 | `src/sources/feishu-trigger.ts` | 飞书事件、历史页与话题页统一翻译成触发 |
 | `src/sources/feishu-loops.ts` | 飞书的循环：事件消费者、历史补收、群名刷新、订阅线程轮询 |
 | `src/sources/feishu-channel.ts` | 飞书渠道：`sendFeishu` 与 `feishuLink` |

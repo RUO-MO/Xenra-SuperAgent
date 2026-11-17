@@ -12,6 +12,7 @@ import { usePoll } from './api.ts'
 import { Button, Icon, Input, Tag } from './controls.tsx'
 import { usePanel, usePanelData } from './provider.tsx'
 import { Hint, PageHead, Section } from './widgets.tsx'
+import { WorkbenchFlow } from './lifecycle.tsx'
 
 type TargetView = ApiResponse<'GET targets'>
 
@@ -177,6 +178,9 @@ export function WorkbenchPage() {
 
       {/* The chain a submitted request walks through, with live counts from the last 24 hours. */}
       <PipelineFlow />
+
+      {/* Recent requests as an expandable lifecycle tree. */}
+      <WorkbenchFlow />
 
       {/* One request box; scope is an optional disclosure, not a second always-visible field. */}
       <form onSubmit={submit} className="dt-wb-compose">

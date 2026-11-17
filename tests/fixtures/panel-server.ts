@@ -118,6 +118,8 @@ export interface PanelServer {
   selectedTarget: string
   /** What `GET update` answers; a test overrides it to describe a checkout that is behind or dirty. */
   update?: UpdateState
+  /** What `GET update/progress` answers; set to follow a staged reload in a test. */
+  reloadProgress?: ApiResponse<'GET update/progress'>
   /** Replaces the answer of `POST git/upgrade`, for a test that needs a failure or a still-outdated result. */
   gitUpgrade?: (answer: { ok: boolean; output: string; version?: string; outdated: boolean })
     => { ok: boolean; output: string; version?: string; outdated: boolean }
@@ -381,7 +383,24 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
   'GET update': { answer: () => server.update ?? { kind: 'linked' as const, spec: 'link:/srv/xenra-superagent',
     directory: '/srv/xenra-superagent', version: '0.2.0', status: 'up-to-date' as const, local: 'abc1234', remote: 'abc1234',
     branch: 'origin/main', behind: 0, ahead: 0, instruction: 'Nothing to pull.' } },
+  'POST update/reload': { answer: () => { server.reloadProgress = { requestId: 'r1', kind: 'linked', stage: 'checking',
+    steps: ['checking', 'reloading', 'done'], message: 'Checking the installation', startedAt: '', updatedAt: '' }
+    return { requestId: 'r1', kind: 'linked' } } },
+  'GET update/progress': { answer: () => server.reloadProgress },
   'GET targets': { answer: () => ({ items: server.targets, selected: server.selectedTarget, watched: 'acme/widgets' }) },
+  'POST targets': { body: true, answer: ({ body }) => {
+    const id = String(body.name || body.repository || body.root || 'target').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'target'
+    const item = body.kind === 'repository'
+      ? { id, kind: 'repository' as const, name: String(body.name ?? ''), repository: String(body.repository ?? ''), root: '' }
+      : { id, kind: 'directory' as const, name: String(body.name ?? ''), root: String(body.root ?? '') }
+    server.targets = [...server.targets, item]
+    if (!server.selectedTarget) server.selectedTarget = id
+    return { items: server.targets, selected: server.selectedTarget }
+  } },
+  'PUT targets/selected': { body: true, answer: ({ body }) => {
+    server.selectedTarget = String(body.id)
+    return { items: server.targets, selected: server.selectedTarget }
+  } },
   'DELETE targets/:id': { answer: ({ params }) => {
     server.targets = server.targets.filter(item => item.id !== params.id)
     if (server.selectedTarget === params.id) server.selectedTarget = ''

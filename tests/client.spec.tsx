@@ -51,8 +51,9 @@ afterEach(() => { vi.unstubAllGlobals() })
 
 it('registers a localized main panel, sidebar entry and Plugin Manager row page, and no settings section', () => {
   const { entries, dictionaries, main, nav } = fixture([])
-  expect(entries.map(entry => entry.options.name)).toEqual(['main', 'sidebar.panellist', 'plugins.row.config'])
+  expect(entries.map(entry => entry.options.name)).toEqual(['main', 'sidebar.panellist', 'plugins.row.config', 'plugins.detail.section'])
   expect(entries[2]!.options).toMatchObject({ key: 'xenra-superagent#xenra-superagent', locale: 'xenraSuperagent' })
+  expect(entries[3]!.options).toMatchObject({ id: 'xenra-superagent-update', name: 'plugins.detail.section' })
   expect(Object.keys(dictionaries)).toEqual(['xenraSuperagent'])
   expect(main.options).toMatchObject({ key: 'xenra-superagent', locale: 'xenraSuperagent' })
   expect(nav.options).toMatchObject({ id: 'xenra-superagent', order: 10, locale: 'xenraSuperagent' })

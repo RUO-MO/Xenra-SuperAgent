@@ -74,9 +74,8 @@ function statusLine(state: StateView | undefined, person: number): { tone: 'done
 
 export function HomePage() {
   const { t, call, navigate } = usePanel()
-  const { setup } = usePanelData()
+  const { setup, state } = usePanelData()
   const { data, error, reload } = usePoll(() => call('GET overview'), [])
-  const { state } = usePanelData()
   if (!data) return <LoadState error={error} loading />
   const status = statusLine(state, data.person.length)
   const needsYou = data.person.length > 0

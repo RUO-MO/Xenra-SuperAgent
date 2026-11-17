@@ -44,13 +44,13 @@ it('shows the request pipeline chain with live 24-hour counts', async () => {
 
 it('shows recent requests as a lifecycle tree with expandable stages', async () => {
   server.lifecycle = [{ key: 'workbench:local', title: '检查项目问题', source: 'workbench', at: '2026-11-17T03:00:00Z',
-    progress: 40, current: 'ticket',
+    progress: 40, current: 'ticket', headline: 'ticket: fix-check', headlined: false,
     steps: [
-      { stage: 'trigger', state: 'done', progress: 100, detail: '检查项目问题' },
-      { stage: 'assessment', state: 'done', progress: 100 },
-      { stage: 'ticket', state: 'ongoing', progress: 50, detail: 'fix-check', ticketId: 't1' },
-      { stage: 'assignment', state: 'idle', progress: 0 },
-      { stage: 'reply', state: 'idle', progress: 0 },
+      { stage: 'trigger', state: 'done', progress: 100, summary: 'workbench · operator · 检查项目问题', reasons: [] },
+      { stage: 'assessment', state: 'done', progress: 100, summary: 'accept', reasons: [] },
+      { stage: 'ticket', state: 'ongoing', progress: 50, summary: 'fix-check', reasons: [], ticketId: 't1' },
+      { stage: 'assignment', state: 'idle', progress: 0, summary: 'Not dispatched', reasons: [] },
+      { stage: 'reply', state: 'idle', progress: 0, summary: 'No reply recorded', reasons: [] },
     ] }]
   await mount()
   await click(tab(zh['tab.workbench']))
@@ -65,6 +65,29 @@ it('shows recent requests as a lifecycle tree with expandable stages', async () 
   expect(stages).toHaveLength(5)
   expect(stages[0]!.textContent).toContain(zh['lifecycle.trigger'])
   expect(stages[2]!.getAttribute('data-state')).toBe('ongoing')
+})
+
+it('shows the actual failure reason in the lifecycle tree so the request can be diagnosed', async () => {
+  server.lifecycle = [{ key: 'workbench:local', title: '检查项目问题', source: 'workbench', at: '2026-11-17T03:00:00Z',
+    progress: 20, current: 'assessment', headline: 'assessment: Assessment timed out', headlined: true,
+    steps: [
+      { stage: 'trigger', state: 'done', progress: 100, summary: 'workbench · operator', reasons: [] },
+      { stage: 'assessment', state: 'error', progress: 0, summary: 'unavailable',
+        reasons: [{ code: 'timeout', text: 'Assessment timed out' }] },
+      { stage: 'ticket', state: 'idle', progress: 0, summary: 'No ticket opened', reasons: [] },
+      { stage: 'assignment', state: 'idle', progress: 0, summary: 'Not dispatched', reasons: [] },
+      { stage: 'reply', state: 'idle', progress: 0, summary: 'No reply recorded', reasons: [] },
+    ] }]
+  await mount()
+  await click(tab(zh['tab.workbench']))
+  const root = all('.dt-life-root')[0]!
+  // The headline carries the real reason even while collapsed.
+  expect(root.textContent).toContain('Assessment timed out')
+  expect(root.querySelector('.dt-life-headline')?.getAttribute('data-error')).toBe('true')
+  await click(root)
+  const assess = all('.dt-life-stage')[1]!
+  expect(assess.textContent).toContain('Assessment timed out')
+  expect(assess.querySelector('.dt-life-reasons')?.textContent).toContain('Assessment timed out')
 })
 
 it('adds a repository target inline and removes it again', async () => {

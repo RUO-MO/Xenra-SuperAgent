@@ -188,6 +188,8 @@ const AuditSchema = z.object({
   matches: z.array(z.object({ rule_id: z.string(), reason: z.string() })).optional().catch(undefined),
   direction: z.object({ implementation_requested: z.boolean(), target_basis: z.string(), requires_design_decision: z.boolean(),
     evidence: z.string() }).optional().catch(undefined),
+  intent_evidence: z.string().optional().catch(undefined),
+  proposal: z.object({ title: z.string().optional(), scope: z.string().optional(), worktree_name: z.string().optional() }).optional().catch(undefined),
 }).catch({})
 /** Decision kind, or `wouldAccept` for an ignore decision that observe mode would have accepted. */
 export type DecisionOutcome = DecisionKind | 'wouldAccept'
@@ -204,6 +206,8 @@ export function decisionView(view: Snapshot, decision: Decision) {
     strength: decision.strength, ticketId: decision.ticketId, triggerIds: decision.triggerIds, thread: decision.threadKey,
     rules: judged.map(rule => ({ ...view.rule(rule.rule_id), matched: rule.matched, reason: rule.reason })),
     ...audit.direction ? { direction: audit.direction } : {},
+    ...audit.intent_evidence ? { intentEvidence: audit.intent_evidence } : {},
+    ...audit.proposal ? { proposal: audit.proposal } : {},
     ...thread ? { threadTitle: threadTitle(store, thread) } : {}, preview: texts.join(' / '),
     ticketTitle: decision.ticketId ? store.tickets.get(decision.ticketId)?.title : undefined }
 }

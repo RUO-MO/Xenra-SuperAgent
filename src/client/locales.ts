@@ -151,6 +151,7 @@ const TEXT = {
   'lifecycle.reply': ['回复', 'Reply'],
   lifecycleOpen: ['查看详情', 'Open details'],
   lifecycleNone: ['还没有提交过要求。', 'No requests yet.'],
+  lifecycleNeedAttention: ['需要排查', 'Needs attention'],
   // Workbench: a request entry that acts on the target a person picks, which may be a repository or a local folder.
   workbenchTarget: ['这次要求作用于', 'This request acts on'],
   workbenchTargetHint: ['选一个目标：GitHub 仓库会在那里提交改动并可开 PR，本地文件夹则直接改里面的文件。监听哪个仓库是另一回事，见设置。', 'Pick a target: a GitHub repository receives the changes and can become a pull request, while a local folder is edited in place. Which repository is watched is a separate setting.'],

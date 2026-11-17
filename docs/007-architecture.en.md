@@ -221,8 +221,8 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `src/app/update-check.ts` | Checking for updates: a linked install is judged by its own checkout's upstream branch, a GitHub install by the remote commit; read-only, it fetches nothing and installs nothing |
 | `src/app/self-reload.ts` | Manual hot reload: a linked install replaces changed modules in place through HMR, a GitHub install is removed and reinstalled through the plugin manager; runs in the background writing each stage to a progress file, never fetches or upgrades on its own |
 | `src/app/reload-progress.ts` | Reload progress: writes each stage (check/remove/install/done) to a file in the state directory for the panel to poll across a fiber replacement; records the request id, step plan and current state |
-| `src/app/views/lifecycle.ts` | Request lifecycle view: aggregates trigger, assessment, ticket, assignment and reply stages per thread with their state and progress, for the workbench's connected card tree |
-| `src/client/lifecycle.tsx` | Workbench request-flow tree: one root per request with five stage children, each with a status dot, progress bar and link into its detail view |
+| `src/app/views/lifecycle.ts` | Request lifecycle view: aggregates trigger, assessment, ticket, assignment and reply stages per thread, each with its real diagnostic (reason codes, rule matches, worker report, delivery error) so a stalled request can be diagnosed |
+| `src/client/lifecycle.tsx` | Workbench request-flow tree: one root per request with five stage children carrying concrete reasons, evidence and drill-down links; errors are highlighted and the diagnostic shows even on the collapsed root |
 | `src/sources/feishu-trigger.ts` | One rule that turns Feishu events, history pages and topic pages into Triggers |
 | `src/sources/feishu-loops.ts` | The Feishu loops: the event consumer, history recovery, chat name refresh, subscribed-thread polling |
 | `src/sources/feishu-channel.ts` | The Feishu Channel: `sendFeishu` and `feishuLink` |

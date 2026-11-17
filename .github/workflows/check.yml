@@ -1,5 +1,7 @@
-# The gate between `dev` and `main`: a PR merges only after the same checks a
-# developer runs locally pass on clean Linux and Windows machines.
+# The gate between `dev` and `main`: typecheck and tests run on clean Linux and
+# Windows machines. After they pass, the built `lib/` is rebuilt and committed
+# back to the triggering branch, so a git install always pulls fresh artifacts
+# and no developer has to remember to build before pushing.
 name: CI
 
 on:
@@ -10,11 +12,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   check:
@@ -22,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           # The version pinned in package.json's `packageManager`.
@@ -38,10 +42,23 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
-      # `lib/` is committed so the repository installs as-is. A build that
-      # changes it means the checked-in artifacts are stale.
-      - name: Check that lib/ matches the sources
-        run: git diff --exit-code --stat -- lib/
+      # Rebuild lib/ from the sources and commit it back so git installs always
+      # carry the artifacts matching this commit. Skipped on PRs from forks,
+      # where the token is read-only and the branch is not writable.
+      - name: Commit rebuilt lib/ (push to dev/main)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- lib/; then
+            echo "lib/ is already current; nothing to commit."
+            exit 0
+          fi
+          git add lib/
+          git commit -m "chore: rebuild lib/ from sources [skip ci]"
+          # Rebase over any push that landed while CI ran, keeping only our lib/ commit on top.
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:${GITHUB_REF_NAME}
 
   windows:
     name: typecheck, test, build (Windows)
@@ -74,5 +91,3 @@ jobs:
           --exclude 'tests/docs.spec.ts'
       - name: Build
         run: pnpm build
-      - name: Check that lib/ matches the sources
-        run: git diff --exit-code --stat -- lib/

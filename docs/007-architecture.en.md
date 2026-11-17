@@ -219,6 +219,8 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `src/sources/workbench.ts` | The workbench entry kind and plugin, exported as `./workbench`: builds a console request into a Trigger, its scope and variables; owns no repository or directory |
 | `src/workspace/targets.ts` | Workspace targets: repository and local-folder kinds, their validation (absolute path, not inside the state directory, no nesting between targets), the default target and id generation; the watched repository stays a single deployment-level fact |
 | `src/app/update-check.ts` | Checking for updates: a linked install is judged by its own checkout's upstream branch, a GitHub install by the remote commit; read-only, it fetches nothing and installs nothing |
+| `src/app/self-reload.ts` | Manual hot reload: a linked install replaces changed modules in place through HMR, a GitHub install is removed and reinstalled through the plugin manager; runs in the background writing each stage to a progress file, never fetches or upgrades on its own |
+| `src/app/reload-progress.ts` | Reload progress: writes each stage (check/remove/install/done) to a file in the state directory for the panel to poll across a fiber replacement; records the request id, step plan and current state |
 | `src/sources/feishu-trigger.ts` | One rule that turns Feishu events, history pages and topic pages into Triggers |
 | `src/sources/feishu-loops.ts` | The Feishu loops: the event consumer, history recovery, chat name refresh, subscribed-thread polling |
 | `src/sources/feishu-channel.ts` | The Feishu Channel: `sendFeishu` and `feishuLink` |
@@ -233,6 +235,7 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `src/client/home.tsx` | Home: what waits for you first, then one line of status; the Executor counts fold away |
 | `src/client/workbench.tsx` | Workbench: the shared project, the request and its scope, and the requests submitted this session |
 | `src/client/update-status.tsx` | The update section: whether this copy is a linked install or a GitHub one, how far it is ahead or behind, and what to do to update |
+| `src/client/detail-update.tsx` | Check for updates on the plugin manager detail page: registered into `plugins.detail.section`, drawn only on this bundle's page; reuses the panel's `UpdateStatus` inside its own `PanelProvider`, keeping one confirmation flow, one set of diagnostics and one stylesheet |
 | `src/client/setup-wizard.tsx` | The first-run guide: repository, account, who may ask and the work directory, each step writing its settings block |
 | `src/client/source.tsx` | The Source status and the Source settings cards |
 | `src/client/trigger.tsx` | The Trigger status: Threads under a filter |

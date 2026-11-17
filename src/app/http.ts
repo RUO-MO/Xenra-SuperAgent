@@ -18,8 +18,10 @@ import type { Deployment, Machine } from '../deployment.ts'
 import type { DshExecutor } from '../executor/dsh.ts'
 import type { Health } from '../sources/host.ts'
 import { workbenchTrigger } from '../sources/workbench.ts'
-import { targetOf } from '../workspace/targets.ts'
+import { idFor, targetOf, targetProblem, TargetSchema, type Target } from '../workspace/targets.ts'
 import { updateState } from './update-check.ts'
+import { profileDirOf } from './self-reload.ts'
+import { readProgress } from './reload-progress.ts'
 import type { SourceRegistry } from '../sources/registry.ts'
 import type { Sessions } from './sessions.ts'
 import type { Store } from './store.ts'
@@ -53,6 +55,10 @@ export interface HttpHost {
   readonly deployment: Deployment
   readonly setupProblem?: SetupProblem | undefined
   readonly feishuProblem?: SetupProblem | undefined
+  /** Start a manual reload; returns immediately with a request id to poll through update/progress. */
+  reload(): { requestId: string; kind: string }
+  /** State directory where the reload progress file lives. */
+  readonly stateDir: string
   configured(): boolean
   links(): LinkTarget
   ticketEnvironment(ticket: Ticket): Variable[]
@@ -239,12 +245,48 @@ function routes(runtime: HttpHost): Routes {
     },
     // Whether a newer version exists depends on how this plugin was installed: a linked checkout is judged by its own
     // upstream branch, a GitHub install by the commit the remote now has. Nothing here installs anything.
-    'GET update': async () => updateState(process.env.DSH_PROFILE_DIR, 'xenra-superagent'),
+    'GET update': async () => updateState(profileDirOf(runtime.context), 'xenra-superagent'),
+    // Start an operator-triggered reload: returns immediately, the stages are followed through update/progress.
+    'POST update/reload': () => runtime.reload(),
+    // The latest reload's staged progress, read from a file that survives the fiber replacement a reinstall causes.
+    'GET update/progress': () => readProgress(runtime.stateDir),
     // The targets a request may act on: several repositories and local directories, of which one repository is watched.
     'GET targets': () => {
       const config = runtime.store.settings().executor.targets
       const watched = runtime.configured() ? runtime.deployment.repository : ''
       return { items: config.items, selected: config.selected, watched }
+    },
+    // Add a repository or directory target. `id` is assigned on the server so the same slug rules apply everywhere, and the
+    // target is validated against this machine before it is stored (directories must be absolute, outside the state dir,
+    // and not nested inside another target). The first target becomes the default; adding never changes what is watched.
+    'POST targets': async ({ body }) => {
+      const input = z.object({ kind: z.enum(['repository', 'directory']), name: z.string().optional(),
+        repository: z.string().optional(), root: z.string().optional() }).parse(await body())
+      const settings = runtime.store.settings()
+      const config = settings.executor.targets
+      const id = idFor(input.name || (input.kind === 'repository' ? input.repository : input.root) || '', config.items.map(item => item.id))
+      const value = { id, kind: input.kind, name: input.name ?? '',
+        ...input.kind === 'repository' ? { repository: input.repository ?? '', root: '' } : { root: input.root ?? '' } }
+      const parsed = TargetSchema.safeParse(value)
+      if (!parsed.success) throw parsed.error
+      const problem = targetProblem(parsed.data, runtime.machine.stateDir, config.items)
+      if (problem) throw new RouteError(400, problem)
+      const target = parsed.data as Target
+      if (config.items.some(item => item.id === target.id)) throw new RouteError(400, 'A target with this id already exists')
+      const items = [...config.items, target]
+      const selected = config.selected || target.id
+      runtime.store.saveSettings({ ...settings, executor: { ...settings.executor, targets: { items, selected } } })
+      return { items, selected }
+    },
+    // The target a workbench request acts on when none is named in the request itself.
+    'PUT targets/selected': async ({ body }) => {
+      const { id } = z.object({ id: z.string() }).parse(await body())
+      const settings = runtime.store.settings()
+      const config = settings.executor.targets
+      if (id !== '' && !config.items.some(item => item.id === id)) throw new RouteError(404, 'Target not found')
+      const selected = id
+      runtime.store.saveSettings({ ...settings, executor: { ...settings.executor, targets: { ...config, selected } } })
+      return { items: config.items, selected }
     },
     'DELETE targets/:id': ({ params }) => {
       const settings = runtime.store.settings()

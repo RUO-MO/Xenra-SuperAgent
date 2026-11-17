@@ -9,6 +9,25 @@ import { usePanel, mount, remount, settle, all, find, tab, click, type, text, fi
 import { server, problemOf, fakeForm } from './fixtures/panel-server.ts'
 
 usePanel()
+it('shows staged progress after a manual plugin reload, and clears it when the run finishes', async () => {
+  at({ page: 'settings', query: { group: 'deployment' } })
+  await mount()
+  // A linked install with uncommitted changes offers a reload; the default fixture is just such an install.
+  expect(text()).toContain(zh.updateTitle)
+  const reloadButton = find(zh.updateReload)
+  await click(reloadButton)
+  // The reload asks for confirmation first because it interrupts running work.
+  await click(zh.confirm)
+  // Starting the reload returns a request id; the strip follows its stages from GET update/progress.
+  await settle()
+  expect(document.querySelector('.dt-reload-progress')).not.toBeNull()
+  expect(all('.dt-reload-step').map(step => step.textContent)).toEqual([
+    zh['updateStage.checking'], zh['updateStage.reloading'], zh['updateStage.done'],
+  ])
+  expect(server.requests.some(request => request.path === 'update/reload')).toBe(true)
+  expect(server.requests.some(request => request.path === 'update/progress')).toBe(true)
+})
+
 it('saves this machine\'s settings in the Deployment settings through DSH\'s configuration form, without a restart', async () => {
   const { form: editable, mutations } = fakeForm()
   server.form = editable

@@ -219,6 +219,8 @@ window.__ModuleLoader__.load({ id: "xenra-superagent", factory: (require) => { /
 | `src/sources/workbench.ts` | 工作台入口种类与插件入口，导出为 `./workbench`：把控制台请求构造成 Trigger、范围与环境变量；不拥有任何仓库或目录 |
 | `src/workspace/targets.ts` | 工作区目标：仓库型与本地文件夹型两种，校验（绝对路径、不落在状态目录、目标之间不嵌套）、默认目标与 id 生成；被监听的那个仓库仍是部署级的单值 |
 | `src/app/update-check.ts` | 检查更新：本地链接安装按自己仓库的上游分支判断，GitHub 安装按远端提交判断；只读比较，不拉取、不安装 |
+| `src/app/self-reload.ts` | 手动热重载：本地链接安装用 HMR 就地替换改动的模块，GitHub 安装经插件管理器卸载后重装；后台执行并把各阶段写入进度文件，不自动拉取或升级 |
+| `src/app/reload-progress.ts` | 重载进度：把检查/卸载/安装/完成各阶段写入状态目录里的文件，供面板跨 fiber 重启轮询；记录请求 id、步骤计划与当前状态 |
 | `src/sources/feishu-trigger.ts` | 飞书事件、历史页与话题页统一翻译成触发 |
 | `src/sources/feishu-loops.ts` | 飞书的循环：事件消费者、历史补收、群名刷新、订阅线程轮询 |
 | `src/sources/feishu-channel.ts` | 飞书渠道：`sendFeishu` 与 `feishuLink` |
@@ -233,6 +235,7 @@ window.__ModuleLoader__.load({ id: "xenra-superagent", factory: (require) => { /
 | `src/client/home.tsx` | 首页：先是等你处理的事，其次是一句话的运行状态；执行器计数收在折叠区 |
 | `src/client/workbench.tsx` | 工作台：显示共用的项目、写要求与范围、提交后显示本次会话提交过的要求 |
 | `src/client/update-status.tsx` | 检查更新一节：说明这次安装是本地链接还是 GitHub 安装，显示领先/落后/有未提交改动，并给出下一步该怎么更新 |
+| `src/client/detail-update.tsx` | 插件管理器详情页的检查更新：注册到 `plugins.detail.section`，只在本 bundle 的详情页绘制；用独立的 `PanelProvider` 复用面板的 `UpdateStatus`，保持同一套确认、诊断与样式 |
 | `src/client/setup-wizard.tsx` | 首次配置引导：仓库、账号、可以派活的人、工作目录四步，每步直接写对应的设置块 |
 | `src/client/source.tsx` | 来源状态与来源设置卡片 |
 | `src/client/trigger.tsx` | 触发状态：按过滤条件列出的线程 |

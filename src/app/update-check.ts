@@ -152,17 +152,50 @@ export async function linkedState(installed: UpdateSource): Promise<UpdateState>
  * The comparison reads the remote through the installed package's own checkout when one exists, and otherwise asks the
  * GitHub API. It never fetches into that checkout, so checking for updates cannot change what is installed.
  */
-export async function gitInstalledState(installed: UpdateSource): Promise<UpdateState> {
+export async function gitInstalledState(installed: UpdateSource, profileDir = process.env.DSH_PROFILE_DIR): Promise<UpdateState> {
   if (existsSync(join(installed.directory, '.git'))) return { ...(await checkoutState(installed.directory, installed)), kind: 'git' }
   const repository = repositoryOf(installed.spec)
   if (!repository) {
     return { ...installed, kind: 'git', status: 'unavailable', instruction: '',
       problem: 'The installed spec names no repository to compare against.' }
   }
-  const ref = await git(installed.directory, ['rev-parse', '--short', 'HEAD'])
-  return { ...installed, kind: 'git', status: 'unavailable', instruction: '',
-    problem: `Reinstall through the plugin manager to pick up the latest ${repository}${ref.ok ? ` (installed ${ref.text})` : ''}.` }
+  const local = installedCommit(installed, profileDir)
+  const remote = await remoteHead(repository)
+  if (!local || !remote) {
+    return { ...installed, kind: 'git', status: 'unavailable', local, instruction: '',
+      problem: `Reinstall through the plugin manager to pick up the latest ${repository}${local ? ` (installed ${local})` : ''}.` }
+  }
+  if (local === remote.commit) {
+    return { ...installed, kind: 'git', status: 'up-to-date', local: local.slice(0, 7), remote: remote.commit.slice(0, 7),
+      instruction: 'This git install is at the latest published commit.' }
+  }
+  return { ...installed, kind: 'git', status: 'behind', behind: 1, local: local.slice(0, 7), remote: remote.commit.slice(0, 7),
+    instruction: `A newer commit is published for ${repository}. Press Reload to reinstall ${remote.version ?? remote.commit.slice(0, 7)}.` }
 }
+
+/** Reads the commit a git install is pinned to from the profile's pnpm lockfile. */
+function installedCommit(installed: UpdateSource, profileDir: string | undefined): string | undefined {
+  if (!profileDir) return undefined
+  try {
+    const text = readFileSync(join(profileDir, 'pnpm-lock.yaml'), 'utf8')
+    const match = /resolution:\s*\{[^}]*commit:\s*([0-9a-f]{40})[^}]*repo:\s*([^,}]+)/.exec(text)
+    return match?.[1]
+  } catch { return undefined }
+}
+
+/** Reads the remote HEAD and its latest version tag without touching the local checkout. */
+async function remoteHead(repository: string): Promise<{ commit: string; version?: string } | undefined> {
+  const listing = await git(installedTempDir(), ['ls-remote', `https://github.com/${repository}.git`, 'HEAD', 'refs/tags/v*'])
+  if (!listing.ok) return undefined
+  const lines = listing.text.split(/\r?\n/).filter(Boolean)
+  const commit = lines.find(line => line.endsWith('\tHEAD'))?.split(/\s+/)[0]
+  if (!commit || !/^[0-9a-f]{40}$/i.test(commit)) return undefined
+  const version = lines.find(line => line.startsWith(commit) && line.includes('\trefs/tags/v'))
+    ?.split('/').pop()?.replace(/^\^/, '').replace(/^v/, '')
+  return { commit, version }
+}
+/** A harmless cwd for `ls-remote`; it does not read or write the checkout. */
+function installedTempDir(): string { return process.env.DSH_PROFILE_DIR ?? process.cwd() }
 
 /** `git+https://github.com/owner/repo.git` and the `github:owner/repo` shorthand both name a repository. */
 export function repositoryOf(spec: string): string | undefined {
@@ -177,5 +210,5 @@ export async function updateState(profileDir: string | undefined, name: string):
   const installed = sourceOf(profileDir, name)
   if (!installed) return undefined
   const directory = resolve(installed.directory)
-  return installed.kind === 'git' ? gitInstalledState({ ...installed, directory }) : linkedState({ ...installed, directory })
+  return installed.kind === 'git' ? gitInstalledState({ ...installed, directory }, profileDir) : linkedState({ ...installed, directory })
 }

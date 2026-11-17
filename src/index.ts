@@ -5,6 +5,7 @@ import { Runtime } from './app/runtime.ts'
 import { Config, machineOf, type DeploymentConfig } from './deployment.ts'
 import { removeState } from './infra/environment.ts'
 import { watchForRemoval } from './infra/profile.ts'
+import { reloadSelf } from './app/self-reload.ts'
 
 export const name = 'xenra-superagent'
 export const inject = ['agents', 'sessionController', 'sessionPersistence', 'workspaceRegistry', 'permissionPresets', 'tools', 'systemPrompt', 'skills', 'webServer', 'llm', 'subprocess']
@@ -20,7 +21,9 @@ export async function apply(ctx: Context, config: DeploymentConfig): Promise<voi
   const restart = (): void => {
     ctx.fiber.restart().then(() => { ctx.get('settings')?.describe() }).catch((error: unknown) => { ctx.logger.error('xenra-superagent restart failed: %s', String(error)) })
   }
-  const runtime = new Runtime(ctx, machine, restart)
+  // Manual hot reload from the panel: starts in the background; stages are written to the state dir and polled by the panel.
+  const reload = () => reloadSelf(ctx, machine.stateDir)
+  const runtime = new Runtime(ctx, machine, restart, reload)
   // DSH emits its management operations while the plugin is still running. Watching them is the only way to tell a plain
   // uninstall from a disable or an update, all of which stop the plugin; doing that wrong would delete a working
   // installation's data. This subscribes to events DSH already emits — nothing in DSH is changed.

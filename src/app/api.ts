@@ -10,6 +10,7 @@ import type { DecisionListView, SearchView, ThreadDetailView, ThreadListView } f
 import type { TicketListView } from './views/tickets.ts'
 import type { Target, TargetKind } from '../workspace/targets.ts'
 import type { UpdateState } from './update-check.ts'
+import type { ReloadProgress } from './reload-progress.ts'
 
 export const TICKET_FILTERS = ['open', 'person', 'working', 'idle', 'ended'] as const
 export const THREAD_FILTERS = ['subscribed', 'evaluating', 'recent', 'all'] as const
@@ -46,8 +47,14 @@ export interface Api {
     response: { accepted: boolean; reason?: string; triggerId: string; target: { id: string; kind: TargetKind } } }
   /** Whether a newer version exists, asked differently for a linked checkout and a GitHub install. */
   'GET update': { response: UpdateState | undefined }
+  /** Start a manual reload; the work continues in the background and stages are followed through GET update/progress. */
+  'POST update/reload': { response: { requestId: string; kind: string } }
+  /** The latest reload's staged progress (survives the fiber replacement a reinstall causes). */
+  'GET update/progress': { response: ReloadProgress | undefined }
   /** The places a request may act on, and the one repository the agent watches. */
   'GET targets': { response: { items: Target[]; selected: string; watched: string } }
+  'POST targets': { body: { kind: TargetKind; name?: string; repository?: string; root?: string }; response: { items: Target[]; selected: string } }
+  'PUT targets/selected': { body: { id: string }; response: { items: Target[]; selected: string } }
   'DELETE targets/:id': { response: { items: Target[]; selected: string } }
   'PUT settings/:block': { body: { value: unknown; revision: number }; response: { revision: number; restarting: boolean } }
   'GET policy/history': { response: HistoryView }

@@ -145,6 +145,20 @@ it('keeps what a person types in the Execution settings, converting it once on s
   expect(server.settings.executor).toMatchObject({ blockedCommands: ['gh-personal', 'gh-other'], directory: '/srv/my work', maxWorkers: 2 })
 })
 
+it('accepts a Windows drive path in the execution directory, matching the placeholder and the server', async () => {
+  await mount()
+  await click(tab(zh['tab.tickets']))
+  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  const root = () => field<HTMLInputElement>(zh.executionDirectory)
+  const windowsPath = 'D:\\dsh-plugins\\Xenra-SuperAgent'
+  await type(root(), windowsPath)
+  expect(root().value).toBe(windowsPath)
+  // The browser's native validation is what showed "请与所请求的格式保持一致"; a Windows path must satisfy it.
+  expect(root().checkValidity()).toBe(true)
+  await click(zh.save)
+  expect(server.settings.executor.directory).toBe(windowsPath)
+})
+
 it('says why an Input was not delivered on its Ticket\'s page, in either language', async () => {
   const t1 = server.ticketDetails.t1!
   server.ticketDetails.t1 = { ...t1, stage: 'person', action: 'delivery', deliveryError: 'feishu: message recalled' }

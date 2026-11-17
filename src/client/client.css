@@ -155,6 +155,18 @@ div.dt-preview-head { color: var(--dsw-alias-label-secondary); }
 .dt-wb-input::placeholder { color: var(--dsw-alias-label-caption); }
 .dt-wb-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dt-wb-space { flex: 1; }
+/* Workbench pipeline: the chain a request walks through, as live 24h counts. */
+.dt-wb-flow { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 14px; }
+.dt-wb-flow-head { display: flex; align-items: baseline; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-secondary); }
+.dt-wb-flow-head .dt-hint { font-weight: 400; }
+.dt-wb-chain { display: flex; align-items: stretch; flex-wrap: wrap; gap: 4px 0; list-style: none; margin: 0; padding: 0; }
+.dt-wb-chain-step { display: inline-flex; align-items: center; }
+.dt-wb-chain-link { padding: 0 10px; color: var(--dsw-alias-label-caption); font-size: 18px; }
+.dt-wb-chain-node { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-width: 64px; padding: 8px 12px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); }
+.dt-wb-chain-value { font-size: 18px; font-weight: 600; color: var(--dsw-alias-label-primary); font-variant-numeric: tabular-nums; }
+.dt-wb-chain-label { font-size: 11px; color: var(--dsw-alias-label-caption); white-space: nowrap; }
+.dt-wb-flow-notes { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--dsw-alias-label-caption); }
+.dt-wb-flow-live { display: inline-flex; align-items: center; gap: 4px; color: var(--dsw-alias-state-business-primary, var(--dsw-alias-label-secondary)); }
 /* Update check: the install kind and what the answer means, with the two paths that identify this copy. */
 .dt-update { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .dt-update-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }

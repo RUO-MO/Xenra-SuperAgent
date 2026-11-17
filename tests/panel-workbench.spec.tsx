@@ -30,6 +30,18 @@ it('shows the targets as different kinds, and submits the one that is picked', a
   expect(text()).toContain(zh.workbenchRecent)
 })
 
+it('shows the request pipeline chain with live 24-hour counts', async () => {
+  await mount()
+  await click(tab(zh['tab.workbench']))
+  const chain = all('.dt-wb-chain-step')
+  expect(chain).toHaveLength(4)
+  expect(chain.map(step => step.querySelector('.dt-wb-chain-label')?.textContent)).toEqual([
+    zh.flowReceivedLabel, zh['term.trigger'], zh.flowJudgedLabel, zh.flowAcceptedLabel,
+  ])
+  // The default fixture received 12 events; the first stage shows that live count.
+  expect(chain[0]!.querySelector('.dt-wb-chain-value')?.textContent).toBe('12')
+})
+
 it('adds a repository target inline and removes it again', async () => {
   await mount()
   await click(tab(zh['tab.workbench']))

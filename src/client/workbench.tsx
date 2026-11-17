@@ -77,6 +77,37 @@ function AddTarget({ onAdded }: { onAdded: (view: TargetView) => void }) {
   </span>
 }
 
+/** The chain a request walks through, as live counts from the last 24 hours: received → trigger → assessed → admitted. */
+function PipelineFlow() {
+  const { t, call } = usePanel()
+  const { data } = usePoll(() => call('GET overview'), [])
+  if (!data) return null
+  const flow = data.flow
+  const stages = [
+    { label: t('flowReceivedLabel'), value: flow.received },
+    { label: t('term.trigger'), value: flow.triggers },
+    { label: t('flowJudgedLabel'), value: flow.judged },
+    { label: t('flowAcceptedLabel'), value: flow.accepted },
+  ]
+  return <div className="dt-wb-flow">
+    <div className="dt-wb-flow-head"><span>{t('lastDay')}</span><span className="dt-hint">{t('term.ticket')}</span></div>
+    <ol className="dt-wb-chain">
+      {stages.map((stage, index) => <li key={stage.label} className="dt-wb-chain-step">
+        {index > 0 && <span className="dt-wb-chain-link" aria-hidden="true">›</span>}
+        <span className="dt-wb-chain-node">
+          <span className="dt-wb-chain-value">{stage.value}</span>
+          <span className="dt-wb-chain-label">{stage.label}</span>
+        </span>
+      </li>)}
+    </ol>
+    {(flow.evaluating > 0 || flow.filtered > 0 || flow.dropped > 0) && <div className="dt-wb-flow-notes">
+      {flow.evaluating > 0 && <span className="dt-wb-flow-live"><Icon name="running" size={13} />{flow.evaluating} {t('threadFilter.evaluating')}</span>}
+      {flow.filtered > 0 && <span>{flow.filtered} {t('flowFilteredLabel')}</span>}
+      {flow.dropped > 0 && <span>{flow.dropped} {t('flowDroppedLabel')}</span>}
+    </div>}
+  </div>
+}
+
 export function WorkbenchPage() {
   const { t, call, notify } = usePanel()
   const { state, error, reload } = usePanelData()
@@ -143,6 +174,9 @@ export function WorkbenchPage() {
           <AddTarget onAdded={view => { setPicked(view.selected); void reloadTargets() }} />
         </div>
       </div>
+
+      {/* The chain a submitted request walks through, with live counts from the last 24 hours. */}
+      <PipelineFlow />
 
       {/* One request box; scope is an optional disclosure, not a second always-visible field. */}
       <form onSubmit={submit} className="dt-wb-compose">

@@ -2,7 +2,7 @@
 // Home: the one page a person needs — what waits for them, what is wrong, and the folded machinery.
 import { expect, it } from 'vitest'
 import { en, zh } from '../src/client/locales.ts'
-import { usePanel, mount, remount, all, find, tab, click, type, text } from './fixtures/panel.tsx'
+import { usePanel, mount, remount, all, find, tab, click, type, text, at } from './fixtures/panel.tsx'
 import { server, droppedReply, problemOf, threadSummary } from './fixtures/panel-server.ts'
 
 /** Home's one-line status, which says whether work is running rather than how many slots are free. */
@@ -129,9 +129,9 @@ it('shows paused processing as a system problem with its resume action, and says
   await mount()
   expect(status()).toBe(zh.homeStatusPaused)
   expect(text()).toContain(zh.problemPaused)
-  // The Assessments view is reached from Settings, and repeats the pause with a way back to the Tickets list.
-  await click(tab(zh['tab.settings']))
-  await click(find(zh['tab.evals'], '.dt-settings-link'))
+  // The Assessments view is reached by its route (from a lifecycle card), and repeats the pause with a way back to the Tickets list.
+  at({ page: 'settings', query: { group: 'source', view: 'evals' } })
+  await remount()
   expect(text()).toContain(zh.evalRecordsPaused)
   await click(zh.resumeWhere)
   expect(tab(zh['tab.tickets']).getAttribute('aria-selected')).toBe('true')

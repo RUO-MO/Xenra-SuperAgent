@@ -12,9 +12,6 @@ import { TriggerStatus } from './trigger.tsx'
 
 /** The groups a person sets up and changes. */
 const EVERYDAY: readonly SettingsGroup[] = ['source', 'eval', 'execution', 'prompts']
-/** Views an operator opens to see why something happened; they belong beside the settings, not in the top navigation. */
-const ADVANCED: readonly { view: AdvancedView; key: 'tab.threads' | 'tab.evals' }[] = [{ view: 'threads', key: 'tab.threads' },
-  { view: 'evals', key: 'tab.evals' }]
 
 export function SettingsPage({ group, query, state, deploymentForm }: {
   group: SettingsGroup; query: { source?: string; version?: string; view?: AdvancedView }; state: StateView
@@ -22,7 +19,8 @@ export function SettingsPage({ group, query, state, deploymentForm }: {
 }) {
   const { t, navigate } = usePanel()
   const content = (() => {
-    // An advanced view takes over the body; the settings navigation stays so a person can step back into configuration.
+    // Advanced views still render here when navigated to directly (from a lifecycle card), but are no longer advertised
+    // in this navigation — their home is the workbench's request-flow tree.
     if (query.view === 'threads') return <TriggerStatus filter="subscribed" />
     if (query.view === 'evals') return <EvalStatus filter="work" window={undefined} paused={state.paused} />
     switch (group) {
@@ -40,9 +38,6 @@ export function SettingsPage({ group, query, state, deploymentForm }: {
     <nav className="dt-settings-nav" aria-label={t('tab.settings')}>
       {EVERYDAY.map(value => link(value === group && !query.view, t(`settingsGroup.${value}`),
         () => navigate(settingsRoute(value), true)))}
-      <span className="dt-nav-group">{t('tabAdvanced')}</span>
-      {ADVANCED.map(item => link(query.view === item.view, t(item.key),
-        () => navigate(settingsRoute(group, { view: item.view }), true)))}
     </nav>
     <div className="dt-settings-body">
       <h2 className="dt-settings-title">{query.view ? t(`tab.${query.view}`) : t(`settingsGroup.${group}`)}</h2>

@@ -38,7 +38,7 @@ Changes for each released version, newest first; version numbers match `package.
 
 ### 0.2.1 (2026-11-17)
 
-- **Added**: panel refactored into a workbench dashboard, with inline targets, detail-page updates and staged reload progress; the workbench shows the chained pipeline a request moves through.
+- **Added**: panel refactored into a workbench dashboard, with inline targets, detail-page updates and staged reload progress; the workbench shows the chained pipeline a request moves through and a tree of each request's lifecycle from trigger, assessment, ticket and assignment to reply, with drill-down from each stage.
 - **Fixed**: the execution directory now accepts Windows-style paths instead of failing on drive letters and backslashes.
 - **Fixed**: local workbench requests are no longer ignored as "sender not on the list"; the local operator's requests enter assessment as explicit requests.
 

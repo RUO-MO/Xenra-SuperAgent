@@ -120,6 +120,8 @@ export interface PanelServer {
   update?: UpdateState
   /** What `GET update/progress` answers; set to follow a staged reload in a test. */
   reloadProgress?: ApiResponse<'GET update/progress'>
+  /** What `GET lifecycle` answers; tests set request trees for the workbench flow view. */
+  lifecycle?: ApiResponse<'GET lifecycle'>
   /** Replaces the answer of `POST git/upgrade`, for a test that needs a failure or a still-outdated result. */
   gitUpgrade?: (answer: { ok: boolean; output: string; version?: string; outdated: boolean })
     => { ok: boolean; output: string; version?: string; outdated: boolean }
@@ -319,6 +321,7 @@ const SourceSave = z.object({ enabled: z.boolean(), config: z.unknown() })
 const ROUTES: { [K in keyof Api]: Route<K> } = {
   'GET state': { answer: stateView },
   'GET overview': { answer: overviewView },
+  'GET lifecycle': { answer: () => server.lifecycle ?? [] },
   'GET search': { query: ['q'], answer: async ({ query }) => {
     const q = query.q ?? ''
     await server.searching?.(q)

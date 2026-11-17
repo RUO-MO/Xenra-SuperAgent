@@ -6,10 +6,10 @@ import { en, zh } from '../src/client/locales.ts'
 import { usePanel, mount, remount, settle, all, find, tab, click, text, at } from './fixtures/panel.tsx'
 import { server, trigger, threadSummary, ticketSummary } from './fixtures/panel-server.ts'
 
-/** Open the Threads status the way a person does: the Settings tab, then the advanced link that sets `query.view`. */
+/** Open the Threads status by its route, as the workbench lifecycle card navigates to it. */
 const openThreads = async () => {
-  await click(find(zh['tab.settings'], '[role="tab"]'))
-  await click(find(zh['tab.threads'], '.dt-settings-link'))
+  at({ page: 'settings', query: { group: 'source', view: 'threads' } })
+  await remount()
 }
 usePanel()
 it('walks a Thread timeline newest first with dispositions as tags and its Decisions, requeues a filtered Trigger, pages backwards and returns', async () => {

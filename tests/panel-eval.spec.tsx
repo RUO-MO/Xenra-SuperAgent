@@ -7,19 +7,20 @@ import { usePanel, mount, remount, settle, all, find, tab, click, type, text, fi
 import { server } from './fixtures/panel-server.ts'
 
 /**
- * Open the Assessments view the way a person does: the Settings tab, then the advanced link that sets `query.view`.
- * The view has no tab of its own, so the Settings tab stays selected while it takes over the body.
+ * Open the Assessments view by its route. The advanced views now live in the workbench's lifecycle tree and are reached
+ * by drilling into a stage, not by a Settings link; tests set the route directly.
  */
 const openAssessments = async (name = zh['tab.evals']) => {
-  await click(tab(zh['tab.settings']))
-  await click(find(name, '.dt-settings-link'))
+  at({ page: 'settings', query: { group: 'source', view: 'evals' } })
+  await remount()
 }
 usePanel()
 it('opens the Decisions under Policy from the Settings advanced view with their reasons, Decisions that start work first, filterable by kind', async () => {
   await mount()
   await openAssessments()
   expect(tab(zh['tab.settings']).getAttribute('aria-selected')).toBe('true')
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['tab.evals'])
+  // Advanced views no longer appear in the settings navigation; the page title names the view instead.
+  expect(document.querySelector('.dt-settings-title')?.textContent).toBe(zh['tab.evals'])
   // Assessments opens on the Decisions that start work.
   expect(server.requests.some(request => request.path === 'decisions?limit=30&kind=accept,reopen')).toBe(true)
   expect(text()).toContain(zh['reason.explicitRouted'])

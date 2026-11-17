@@ -5,11 +5,12 @@
 import { LIMITS } from './limits.ts'
 import { z } from 'zod'
 import { ADMISSION_DEFAULTS, type Admission, type AdmissionCell, type AdmissionRow } from './admission.ts'
-import { key, type AssessmentOutcome, type Mandate, type Policy, type PolicyEffect, type SourceScope, type Strength, type Thread, type Ticket,
-  type Trigger, type ActorRef, type GateResult } from './core/index.ts'
+import { key, type AssessmentOutcome, type Mandate, type MandateBasis, type Policy, type PolicyEffect, type SourceScope, type Strength,
+  type Thread, type Ticket, type Trigger, type ActorRef, type GateResult } from './core/index.ts'
 import { sameName } from './infra/text.ts'
 import { TargetsConfigSchema } from './workspace/targets.ts'
 import { WORKER_COMMANDS } from './infra/environment.ts'
+import { SOURCE as WORKBENCH_SOURCE } from './sources/workbench.ts'
 
 export const RuleIdSchema = z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/)
 export const RuleMatchSchema = z.object({ rule_id: RuleIdSchema, reason: z.string().trim().min(1).max(500) }).strict()
@@ -193,6 +194,15 @@ export function settingsPolicy(settings: Settings, sources: SourceScope): Policy
     version, paused: settings.paused, evalTimeoutMs: settings.eval.timeoutSeconds * 1000,
     gate(trigger: Trigger, thread, tickets) {
       if (!trigger.human) return machineGate(trigger)
+      // The workbench is the local operator's own console, typed into by whoever is at this machine. There is no outside
+      // sender to vet — unlike GitHub or Feishu — so its requests are explicit by construction and skip the member list.
+      if (trigger.source === WORKBENCH_SOURCE) {
+        // Workbench requests are `direct` by construction (see workbenchTrigger), so 'addressed' is the exact existing
+        // basis: an explicit request with no external membership to re-check.
+        const basis: MandateBasis = { source: trigger.source, scope: trigger.meta, via: 'addressed',
+          addressed: trigger.addressed === 'direct' ? 'direct' : 'mention' }
+        return { admissible: true, strength: 'explicit', basis }
+      }
       const allowed = allowedSender(settings, trigger.actor)
       const scope = listened(sources, trigger.source, trigger.meta)
       const row = scope.listened ? scope.row : undefined
@@ -236,7 +246,7 @@ export function settingsPolicy(settings: Settings, sources: SourceScope): Policy
         const admission = admissionOf(settings, source ?? '', current?.listened ? current.row : undefined, now)
         if (STRENGTH[admission] < STRENGTH[mandate.strength]) return false
         if (mandate.strength === 'explicit') return true
-      } else if (basis.via !== 'bot' && !allowedSender(settings, mandate.actor)) return false
+      } else if (basis.via !== 'bot' && source !== WORKBENCH_SOURCE && !allowedSender(settings, mandate.actor)) return false
       // Observed/inferred Mandates hold only while auto mode is active and all matched rules remain enabled.
       if ((basis.via === 'admission' || basis.via === 'listed' || basis.via === 'bot') && basis.observation) return mode === 'auto' && rulesOn(basis.rules)
       return true

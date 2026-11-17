@@ -32,6 +32,29 @@ Read the numbered documents in order; each builds only on the ones before it. Ev
 - [007 Architecture](docs/007-architecture.en.md)
 - [008 Cookbook](docs/008-cookbook.en.md): adding a Source
 
+## Changelog
+
+Changes for each released version, newest first; version numbers match `package.json`.
+
+### 0.2.1 (2026-11-17)
+
+- **Added**: panel refactored into a workbench dashboard, with inline targets, detail-page updates and staged reload progress; the workbench shows the chained pipeline a request moves through.
+- **Fixed**: the execution directory now accepts Windows-style paths instead of failing on drive letters and backslashes.
+- **Fixed**: local workbench requests are no longer ignored as "sender not on the list"; the local operator's requests enter assessment as explicit requests.
+
+### 0.2.0 (2026-11-13)
+
+- **Milestone**: moved from the research prototype to the standalone Xenra-SuperAgent project under RUO-MO, following the DeepSeek Harness 0.2.2 interfaces (cordis 4.1, schemastery 3.19).
+- **Added**: the Workbench console as a request entry; several work targets can be registered while only one repository is watched.
+- **Added**: uninstalling the plugin now cleans up the files it wrote — shims, `worker-gitconfig` and the database — with nothing to do in the panel first.
+- **Added**: plugin icon and detail-page content; update checks follow how each installation is actually updated; the build ships `zod` and `proper-lockfile` inside `lib`, so installing needs no `node_modules`; bundler path comments are stripped to make builds reproducible.
+- **Fixed**: the worker's git environment no longer leaks into other Sessions or terminals; a failed Feishu consumer stays failed when its ready line arrives; a missing git credential helper is detected the way git actually reports it; the Feishu user id example uses an unmistakable placeholder.
+- **Docs**: a complete Chinese-primary, English-counterpart documentation set; CI restored as the gate between dev and main.
+
+### 0.1.0 (2026-10-31)
+
+- Initial research prototype `dsh-superagent`: listens to GitHub (optionally Feishu), evaluates requests under a Policy, opens Tickets and executes each in its own DSH Session and directory.
+
 ## Development
 
 Requires Node.js 22.19+ or 24+, and pnpm. Install the dependencies, then run:

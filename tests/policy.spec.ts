@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SettingsSchema, assessmentOutcome, policyEffects, settingsPolicy, policyVersion, allowedSender, anyoneAllowed, type Settings } from '../src/policy.ts'
 import type { MandateBasis } from '../src/core/index.ts'
+import { SOURCE as WORKBENCH_SOURCE, workbenchKind } from '../src/sources/workbench.ts'
 import { migrateSettings } from '../src/app/migration.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
 import { feishuKind } from '../src/sources/feishu.ts'
@@ -18,7 +19,7 @@ const base = SettingsSchema.parse({
 })
 function setup(settings: Settings = base) {
   const sources = new SourceRegistry(() => settings)
-  sources.register(feishuKind); sources.register(githubKind)
+  sources.register(feishuKind); sources.register(githubKind); sources.register(workbenchKind)
   return { sources, policy: settingsPolicy(settings, sources), version: policyVersion(settings) }
 }
 const { sources, policy } = setup()
@@ -57,6 +58,17 @@ describe('gate', () => {
     // GitHub logins compare without case; the entry's id names the sender when it has no display name.
     expect(policy.gate(github('alice', 'mention'), thread(), [])).toMatchObject({ admissible: true, strength: 'explicit', basis: { source: 'github', sender: 'Alice' } })
   })
+  it('admits workbench requests as explicit without checking any member list', () => {
+    const workbench: Trigger = { id: 'w', source: WORKBENCH_SOURCE, threads: [{ source: WORKBENCH_SOURCE, id: 'local' }],
+      actor: { source: WORKBENCH_SOURCE, id: 'operator' }, human: true, addressed: 'direct', at: '', text: 'fix it', meta: { target: 'local' } }
+    // No workbench allow-list exists in the settings, yet the local operator's request is admitted and stays valid.
+    expect(policy.gate(workbench, thread(), [])).toMatchObject({ admissible: true, strength: 'explicit',
+      basis: { via: 'addressed', source: 'workbench', addressed: 'direct' } })
+    const mandate = { strength: 'explicit' as const, policyVersion: policy.version, actor: workbench.actor, scope: 'workbench',
+      basis: (policy.gate(workbench, thread(), []) as { basis: MandateBasis }).basis }
+    expect(policy.revalidate(mandate)).toBe(true)
+  })
+
   it('checks each Source\'s own list: a Feishu id allows nothing on GitHub', () => {
     expect(policy.gate(github(MEMBER, 'mention'), thread(), [])).toEqual({ admissible: false, reason: 'not_a_member' })
     expect(allowedSender(base, { source: 'github', id: 'ALICE' })).toEqual({ id: 'Alice' })

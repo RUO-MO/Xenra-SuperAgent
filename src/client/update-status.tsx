@@ -84,8 +84,8 @@ export function UpdateStatus() {
   return <Section title={t('updateTitle')} hint={t('updateKindHint')}>
     <div className="dt-update">
       <div className="dt-update-head">
-        <Icon name={kind === 'git' ? 'pull' : 'folder'} size={16} />
-        <span className="dt-update-kind">{t(kind === 'git' ? 'updateKindGit' : 'updateKindLinked')}</span>
+        <Icon name={kind === 'git' ? 'pull' : kind === 'linked' ? 'folder' : 'question'} size={16} />
+        <span className="dt-update-kind">{t(kind === 'git' ? 'updateKindGit' : kind === 'linked' ? 'updateKindLinked' : 'updateKindUnknown')}</span>
         <Tag tone={tone}>{label}</Tag>
         <Button variant="ghost" size="sm" icon={<Icon name="refresh" size={14} />}
           disabled={busy} onClick={() => { void reload() }}>{t('updateCheck')}</Button>

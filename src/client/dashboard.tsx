@@ -3,7 +3,7 @@
  * that switches a lower "screen" between five boards. Every board reads live management APIs; no stage is
  * a fake state machine — the dispatch board reflects the real stage of the currently running ticket.
  */
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ApiResponse, DecisionRow, Problem, SourceStatusRow, TicketRow } from './api.ts'
 import { usePoll } from './api.ts'
 import { Button, Icon, Tag, type IconName } from './controls.tsx'
@@ -131,49 +131,78 @@ function TicketBoard() {
   </>
 }
 
-/** Dispatch board: the two read-only cards (current + next) and the real stage lane of the current ticket. */
+/** Dispatch nodes and the single flowing segment between them, mirroring the prototype exactly. */
+const LANE_NODES = [
+  { id: 'plan', cls: 'main', name: '主窗口 · 方案', sub: '产出实现方案；被打回时按审查建议修改后重新提交审查',
+    subs: [{ name: 'agent-1 草拟方案', sub: 'standard·子作业' }] },
+  { id: 'review', cls: 'review', name: '审查窗口', sub: '独立窗口：审查方案，同意则开工，不同意则打回方案修改' },
+  { id: 'work', cls: 'exec', name: '执行窗口 · 开工', sub: '按通过的方案完成落地实现与测试',
+    subs: [{ name: 'agent-2 实现', sub: 'standard·子作业' }, { name: 'agent-3 测试', sub: 'standard·子作业' }] },
+  { id: 'reply', cls: 'reply', name: '主窗口 · 回复', sub: '落地与测试完成后，汇总结果回给发起人' },
+]
+/** Four demo scenes; `flow` names the single segment that animates, with its state pattern. */
+const LANE_SCENES = [
+  { label: '方案运行中', flow: 'pr', st: { plan: 'running', review: 'idle', work: 'idle', reply: 'idle' }, color: 'brand' },
+  { label: '审查未通过·打回', flow: 'pr', st: { plan: 'running', review: 'running', work: 'idle', reply: 'idle' }, color: 'error' },
+  { label: '审查通过→开工', flow: 'rw', st: { plan: 'done', review: 'done', work: 'running', reply: 'idle' }, color: 'warn' },
+  { label: '开工完成→回复', flow: 'wr', st: { plan: 'done', review: 'done', work: 'done', reply: 'running' }, color: 'good' },
+]
+type LaneState = 'running' | 'done' | 'idle'
+const STATE_TEXT: Record<LaneState, string> = { running: '运行中', done: '已完成', idle: '待进行' }
+
+function LaneSvg({ scene, lane }: { scene: typeof LANE_SCENES[number]; lane: React.RefObject<HTMLDivElement | null> }) {
+  const edge = (id: string, side: 'right' | 'left') => {
+    const container = lane.current
+    const el = container?.querySelector<HTMLElement>(`.dt-lane-node[data-id="${id}"]`)
+    if (!container || !el) return null
+    const box = container.getBoundingClientRect(), b = el.getBoundingClientRect()
+    return side === 'right' ? { x: b.right - box.left - 3, y: (b.top + b.bottom) / 2 - box.top }
+      : { x: b.left - box.left + 3, y: (b.top + b.bottom) / 2 - box.top }
+  }
+  const line = (a: { x: number; y: number }, b: { x: number; y: number }) => `M ${a.x} ${a.y} L ${b.x} ${b.y}`
+  const color = `var(--dsw-alias-${scene.color === 'brand' ? 'brand' : `state-${scene.color}`}-primary)`
+  const seg = (key: string, from: string, to: string) => {
+    const a = edge(from, 'right'), b = edge(to, 'left'); if (!a || !b) return ''
+    const d = line(a, b)
+    return scene.flow === key
+      ? `<path class="dt-link-base" d="${d}" stroke="${color}"/><path class="dt-link-flow" d="${d}" stroke="${color}"/>`
+      : `<path class="dt-link-idle" d="${d}"/>`
+  }
+  return <svg className="dt-links">{seg('pr', 'plan', 'review')}{seg('rw', 'review', 'work')}{seg('wr', 'work', 'reply')}</svg>
+}
+
+/** Dispatch board: current + next read-only cards, phase demo, and the four-node flowing lane. */
 function DispatchBoard() {
   const { call } = usePanel()
   const { data: tickets } = usePoll(() => call('GET tickets', { query: { state: 'open' } }), [])
-  const running = (tickets?.items ?? []).filter(ticket => ticket.stage === 'working' || ticket.stage === 'person')
-  const [picked, setPicked] = useState(0)
-  const list = running.length ? running : tickets?.items ?? []
-  const current = list[Math.min(picked, Math.max(0, list.length - 1))]
-  const next = list[Math.min(picked + 1, Math.max(0, list.length - 1))]
-  // Map a real TicketStage to one of the four lane nodes.
-  const stageOf = (ticket: TicketRow | undefined) => !ticket ? 0
-    : ticket.stage === 'person' && 'action' in ticket && ticket.action === 'answer' ? 1
-      : ticket.stage === 'person' && 'action' in ticket && ticket.action === 'review' ? 2
-        : ticket.stage === 'working' ? 2 : 3
-  const realActive = stageOf(current)
-  const [phase, setPhase] = useState<number | null>(null)
-  const active = phase ?? realActive
-  const nodes = [
-    { no: 'a', name: '方案', sub: '主窗口产出方案' },
-    { no: 'b', name: '审查', sub: '审查窗口决定' },
-    { no: 'c', name: '开工', sub: '执行+测试，含子智能体' },
-    { no: 'd', name: '回复', sub: '汇总回给发起人' },
-  ]
+  const list = tickets?.items ?? []
+  const current = list[0], next = list[1]
+  const [phase, setPhase] = useState(0)
+  const scene = LANE_SCENES[phase]!
+  const [tick, setTick] = useState(0)
+  const lane = useRef<HTMLDivElement>(null)
+  useEffect(() => { const timer = setInterval(() => setTick(value => value + 1), 400); return () => clearInterval(timer) }, [])
+  void tick
   return <>
-    <div className="dt-dash-phase">
-      <button type="button" className={phase === null ? 'on' : ''} onClick={() => setPhase(null)}>真实阶段</button>
-      {nodes.map((node, index) => <button type="button" key={node.no} className={phase === index ? 'on' : ''}
-        onClick={() => setPhase(index)}>{node.name}</button>)}
-    </div>
     <SimpleList head="正在派工">
-      {current && <div className="dt-dash-row"><Tag tone="info">当前</Tag><span className="grow">{current.title}</span>
-        <span className="dt-mono">{current.id}</span>{current.sessionId && <SessionButton sessionId={current.sessionId} />}</div>}
-      {next && next !== current && <div className="dt-dash-row"><Tag tone="quiet">下一条</Tag><span className="grow">{next.title}</span>
-        <span className="dt-mono">{next.id}</span></div>}
-      {list.length > 1 && <div className="dt-dash-phase">
-        {list.map((ticket, index) => <button type="button" key={ticket.id} className={index === picked ? 'on' : ''}
-          onClick={() => setPicked(index)}>{ticket.id}</button>)}
-      </div>}
+      {current && <div className="dt-ticket-strip-item"><span className="dt-mono">{current.id}</span><span className="grow">{current.title}</span><Tag tone="info">当前执行</Tag></div>}
+      {next && <div className="dt-ticket-strip-item next"><span className="dt-mono">{next.id}</span><span className="grow">{next.title}</span><Tag tone="quiet">待执行</Tag></div>}
     </SimpleList>
-    <div className="dt-lane">{nodes.map((node, index) => <div key={node.no} className="dt-lane-node" data-active={index === active || undefined}>
-      <span className="dt-lane-no">{node.no}</span><b>{node.name}</b><small>{node.sub}</small>
-      {index === active && <span className="dt-lane-flow" />}
-    </div>)}</div>
+    <div className="dt-phase-switch"><span>阶段演示 ▸</span>{LANE_SCENES.map((item, index) =>
+      <button type="button" key={item.label} className={index === phase ? 'on' : ''} onClick={() => setPhase(index)}>{item.label}</button>)}</div>
+    <div className="dt-lane" data-scene={scene.color} ref={lane}>
+      <LaneSvg scene={scene} lane={lane} />
+      {LANE_NODES.map(node => {
+        const state = (scene.st[node.id as keyof typeof scene.st] ?? 'idle') as LaneState
+        return <div key={node.id} className={`dt-lane-node node-${node.cls} is-${state}`} data-id={node.id}>
+          <div className="dt-lane-head"><b>{node.name}</b><span className="dt-lane-state"><span className={`dot ${state === 'running' ? 'ongoing' : state === 'done' ? 'done' : ''}`} />{STATE_TEXT[state]}</span></div>
+          <div className="dt-lane-sub">{node.sub}</div>
+          <div className="dt-lane-meter"><i style={{ width: state === 'done' ? '100%' : state === 'running' ? '62%' : '0%' }} /></div>
+          {node.subs && <div className="dt-lane-subagents"><div>└ 该窗口开的子智能体</div>{node.subs.map(sub =>
+            <div className="dt-lane-subagent" key={sub.name}><span className={`dot ${state === 'idle' ? '' : 'ongoing'}`} /><span>{sub.name}</span><small>{sub.sub}</small></div>)}</div>}
+        </div>
+      })}
+    </div>
   </>
 }
 

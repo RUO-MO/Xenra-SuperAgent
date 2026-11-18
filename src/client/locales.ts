@@ -241,6 +241,7 @@ const TEXT = {
   updateKindHint: ['链接安装看它自己的上游分支，GitHub 安装看远端最新的提交；只读检查，不会自动升级。', 'A linked install is judged by its own upstream branch, a GitHub install by the remote\'s latest commit. This is a read-only check and never upgrades by itself.'],
   updateKindLinked: ['本地文件夹安装', 'Linked folder install'],
   updateKindGit: ['GitHub 安装', 'GitHub install'],
+  updateKindUnknown: ['安装方式未知', 'Install type unknown'],
   updateUnavailable: ['读不到安装信息：这个 profile 里没有声明本插件。', 'Install details are unavailable: this profile does not declare the plugin.'],
   'update.up-to-date': ['已是最新', 'Up to date'],
   'update.behind': ['落后 {behind} 个提交', '{behind} commit(s) behind'],

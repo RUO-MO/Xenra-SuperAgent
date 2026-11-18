@@ -53,10 +53,23 @@ interface PmLike {
  */
 export function profileDirOf(ctx?: Pick<Context, 'get'>): string | undefined {
   if (ctx) {
-    const profile = (ctx as Context & { get(name: 'profileContext'): { dir?: string; path?: string } | undefined })
-      .get('profileContext' as never) as { dir?: string; path?: string } | undefined
-    if (profile?.dir) return profile.dir
-    if (profile?.path) return profile.path
+    // Different DSH builds name the profile location differently. Accept the known shapes rather than
+    // falling through to "no profile", which would misreport a git install as an unknown/local folder.
+    const profile = (ctx as Context & { get(name: 'profileContext'): unknown })
+      .get('profileContext' as never) as
+      | { dir?: string; path?: string; profileDir?: string; directory?: string; root?: string; current?: { dir?: string; path?: string } }
+      | string
+      | undefined
+    if (typeof profile === 'string' && profile.trim()) return profile.trim()
+    if (profile && typeof profile === 'object') {
+      if (profile.dir) return profile.dir
+      if (profile.path) return profile.path
+      if (profile.profileDir) return profile.profileDir
+      if (profile.directory) return profile.directory
+      if (profile.root) return profile.root
+      if (profile.current?.dir) return profile.current.dir
+      if (profile.current?.path) return profile.current.path
+    }
   }
   const env = process.env.DSH_PROFILE_DIR?.trim()
   return env || undefined

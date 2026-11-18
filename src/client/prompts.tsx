@@ -17,16 +17,16 @@ const originText = (t: T, view: PromptsView, from: Origin | undefined): string |
   : from === 'defaults' ? t('promptDraftFromDefaults') : 'revision' in from ? t('promptDraftFromHistory', { revision: from.revision })
   : t('promptDraftSectionReset', { part: sectionLabel(t, view, from.reset) })
 
-export function PromptsPage() {
+export function PromptsPage({ role }: { role?: 'orchestrator' | 'worker' } = {}) {
   const { call } = usePanel()
   const [view, setView] = useState<PromptsView>()
   const [error, setError] = useState<Error>()
   const reload = useCallback(async () => { setView(await call('GET prompts')) }, [call])
   useEffect(() => { reload().catch(setError) }, [reload])
-  return view ? <PromptsEditor view={view} reload={reload} /> : <LoadState loading error={error} />
+  return view ? <PromptsEditor view={view} reload={reload} initialRole={role} /> : <LoadState loading error={error} />
 }
 
-function PromptsEditor({ view, reload }: { view: PromptsView; reload: () => Promise<void> }) {
+function PromptsEditor({ view, reload, initialRole }: { view: PromptsView; reload: () => Promise<void>; initialRole?: 'orchestrator' | 'worker' }) {
   const { t, call, notify } = usePanel()
   const saved = withOverrides(view.current.config)
   const draft = useDraft<PromptConfig, PromptNote>({ key: `xenra-superagent/prompts/${view.masterId}`, saved, revision: view.revision,
@@ -59,7 +59,7 @@ function PromptsEditor({ view, reload }: { view: PromptsView; reload: () => Prom
       role="tab" className="dt-subtab" aria-selected={tab === item.value} onClick={() => setTab(item.value)}>{item.label}</button>)}</div>
     {removed.length > 0 && <Hint>{t('promptRemovedParts', { parts: removed.join(t('listSeparator')) })}</Hint>}
     {tab === 'edit' && <PromptSections config={config} view={view} changed={changed} selected={selected} onSelect={select} onEdit={edit} />}
-    {tab === 'full' && <FullPrompt config={config} view={view} dirty={draft.dirty} revision={draft.revision} onEdit={open} />}
+    {tab === 'full' && <FullPrompt config={config} view={view} dirty={draft.dirty} revision={draft.revision} onEdit={open} initialRole={initialRole} />}
     {tab === 'history' && <PromptHistory key={view.revision} view={view} from={draft.meta?.from}
       onLoad={(next, from) => edit(withOverrides(next, view.parts), { from })} />}
     <SaveBar {...draft} words={words} onSave={() => { void draft.submit() }}
@@ -177,11 +177,11 @@ function BuiltInEditor({ config, view, part, onEdit }: {
 type Preview = ApiResponse<'POST prompts/preview'>
 type Target = 'orchestrator' | 'worker' | `skill/${string}`
 const KIND_LABEL = { team: 'promptPartTeam', fixed: 'promptPartFixed', generated: 'promptPartGenerated' } as const
-function FullPrompt({ config, view, dirty, revision, onEdit }: {
-  config: PromptConfig; view: PromptsView; dirty: boolean; revision: number; onEdit: (name: string) => void
+function FullPrompt({ config, view, dirty, revision, onEdit, initialRole }: {
+  config: PromptConfig; view: PromptsView; dirty: boolean; revision: number; onEdit: (name: string) => void; initialRole?: 'orchestrator' | 'worker'
 }) {
   const { t, call, notify } = usePanel()
-  const [target, setTarget] = useState<Target>('orchestrator')
+  const [target, setTarget] = useState<Target>(initialRole ?? 'orchestrator')
   const [compare, setCompare] = useState<'saved' | 'default'>(dirty ? 'saved' : 'default')
   // Keep the preview paired with the config it was composed from so diffs stay consistent until the next preview arrives.
   const [preview, setPreview] = useState<{ config: PromptConfig; value: Preview }>()

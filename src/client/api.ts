@@ -1,6 +1,7 @@
 /** Same-origin client and polling hook for the orchestrator management API. */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Api, ApiRequest, ApiResponse } from '../app/api.ts'
+export type { ApiResponse } from '../app/api.ts'
 import { USER_ERRORS, type UserErrorCode } from '../core/errors.ts'
 import type { TicketStage } from '../core/stage.ts'
 import type { SetupProblem } from '../setup.ts'

@@ -236,6 +236,8 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `src/client/route.ts` | `TABS`, `SETTINGS_GROUPS`, `parseRoute`, `initialLocation` and `remember` |
 | `src/client/home.tsx` | Home: what waits for you first, then one line of status; the Executor counts fold away |
 | `src/client/workbench.tsx` | Workbench: the shared project, the request and its scope, and the requests submitted this session |
+| `src/client/workbench2.tsx` | Unified workbench: todo entry cards and their four processing pages, config-page entries, reusing the existing console and settings editors |
+| `src/client/dashboard.tsx` | Embedded dashboard: clickable five-stage pipeline and the signal/assessment/ticket/dispatch/reply boards |
 | `src/client/update-status.tsx` | The update section: whether this copy is a linked install or a GitHub one, how far it is ahead or behind, and what to do to update |
 | `src/client/detail-update.tsx` | Check for updates on the plugin manager detail page: registered into `plugins.detail.section`, drawn only on this bundle's page; reuses the panel's `UpdateStatus` inside its own `PanelProvider`, keeping one confirmation flow, one set of diagnostics and one stylesheet |
 | `src/client/setup-wizard.tsx` | The first-run guide: repository, account, who may ask and the work directory, each step writing its settings block |

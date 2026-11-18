@@ -22,6 +22,13 @@ export type SettingsGroup = typeof SETTINGS_GROUPS[number]
 /** The diagnostic views, reachable from Settings and never shown as a top-level tab of their own. */
 export const ADVANCED_VIEWS = ['threads', 'evals'] as const
 export type AdvancedView = typeof ADVANCED_VIEWS[number]
+/** The four todo categories shown as entry cards on the workbench. */
+export const TODO_KINDS = ['answer', 'review', 'blocked', 'system'] as const
+export type TodoKind = typeof TODO_KINDS[number]
+/** Advanced configuration pages reached from the workbench config area. */
+export const CONFIG_PAGES = ['models', 'prompts', 'auth', 'review-gate', 'ticket-gate'] as const
+export type ConfigPage = typeof CONFIG_PAGES[number]
+
 export type Route = { page: 'workbench'; id?: undefined; query?: undefined }
   | { page: 'home'; id?: undefined; query?: undefined }
   | { page: 'tickets'; id?: undefined; query: { filter?: TicketFilter } }
@@ -30,6 +37,8 @@ export type Route = { page: 'workbench'; id?: undefined; query?: undefined }
   | { page: 'threads'; id: string; query?: { trigger?: string } }
   | { page: 'evals'; id?: undefined; query: { filter?: DecisionFilter; window?: '24h' } }
   | { page: 'settings'; id?: undefined; query: { group: SettingsGroup; source?: string; version?: string; view?: AdvancedView } }
+  | { page: 'processing'; id: TodoKind; query?: undefined }
+  | { page: 'config'; id: ConfigPage; query?: undefined }
 export const HOME: Route = { page: 'home' }
 export const settingsRoute = (group: SettingsGroup, query: { source?: string; version?: string; view?: AdvancedView } = {}): Route =>
   ({ page: 'settings', query: { group, ...query } })
@@ -37,7 +46,9 @@ export const setupPage = (place: SetupPlace): Route =>
   place === 'deployment' ? settingsRoute('deployment') : settingsRoute('source', { source: place })
 /** The label of a route in a breadcrumb or a back button. */
 export const routeLabel = (t: T, route: Route): string =>
-  route.id ? t(route.page === 'threads' ? 'term.thread' : 'term.ticket') : t(`tab.${route.page}`)
+  route.page === 'processing' ? t(`processing.${route.id}`)
+    : route.page === 'config' ? t(`config.${route.id}`)
+      : route.id ? t(route.page === 'threads' ? 'term.thread' : 'term.ticket') : t(`tab.${route.page}`)
 
 const pick = <V extends string>(values: readonly V[], value: unknown): V | undefined => values.find(item => item === value)
 function compact<Q extends object>(query: Q): Q | undefined {
@@ -64,6 +75,8 @@ export function parseRoute(value: unknown): Route | undefined {
       window: query?.window === '24h' ? '24h' as const : undefined }) ?? {} }
     case 'settings': return { page, query: { group: pick(SETTINGS_GROUPS, query?.group) ?? 'source',
       ...compact({ source: text('source'), version: text('version'), view: pick(ADVANCED_VIEWS, query?.view) }) } }
+    case 'processing': return record && pick(TODO_KINDS, record) ? { page: 'processing', id: pick(TODO_KINDS, record)! } : undefined
+    case 'config': return record && pick(CONFIG_PAGES, record) ? { page: 'config', id: pick(CONFIG_PAGES, record)! } : undefined
     default: return undefined
   }
 }

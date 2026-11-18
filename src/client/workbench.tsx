@@ -115,6 +115,7 @@ export function WorkbenchPage() {
   const [text, setText] = useState('')
   const [scope, setScope] = useState('')
   const [showScope, setShowScope] = useState(false)
+  const [actor, setActor] = useState('operator')
   const [busy, setBusy] = useState(false)
   const [sent, setSent] = useState<{ id: string; text: string; triggerId: string; target: string; at: string }[]>([])
   const [failure, setFailure] = useState<string>()
@@ -142,13 +143,13 @@ export function WorkbenchPage() {
     if (!text.trim() || busy) return
     const id = requestId()
     setBusy(true); setFailure(undefined)
-    void call('POST workbench/requests', { body: { id, actor: 'operator', text: text.trim(),
+    void call('POST workbench/requests', { body: { id, actor: actor.trim() || 'operator', text: text.trim(),
       ...(scope.trim() ? { scope: scope.trim() } : {}), ...(active ? { target: active.id } : {}) } })
       .then(result => {
         setSent(previous => [{ id, text: text.trim(), triggerId: result.triggerId, target: result.target.id,
           at: new Date().toISOString() }, ...previous].slice(0, 8))
         setText(''); setScope('')
-        notify(t(result.accepted ? 'workbenchSubmitted' : 'workbenchNotAdmitted'))
+        notify(t(result.accepted ? 'todoComposeQueued' : 'workbenchNotAdmitted'))
         void reload()
       })
       .catch((problem: unknown) => setFailure(problem instanceof Error ? problem.message : String(problem)))
@@ -192,6 +193,8 @@ export function WorkbenchPage() {
         {showScope && <Input id="dt-wb-scope" className="dt-mono" value={scope} disabled={!configured || busy}
           aria-label={t('workbenchScopeLabel')} placeholder={t('workbenchScopePlaceholder')}
           onChange={event => setScope(event.target.value)} />}
+        <Input id="dt-wb-actor" className="dt-mono" value={actor} disabled={!configured || busy}
+          aria-label={t('workbenchActorLabel')} onChange={event => setActor(event.target.value)} />
         <div className="dt-wb-actions">
           <button type="button" className="dt-textlink" aria-expanded={showScope} aria-controls="dt-wb-scope"
             onClick={() => setShowScope(!showScope)}>{t('workbenchScopeLabel')}</button>

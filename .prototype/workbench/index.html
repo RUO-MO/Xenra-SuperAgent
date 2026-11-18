@@ -1,0 +1,1314 @@
+<!doctype html>
+<!--
+  原型：Xenra-SuperAgent 「一体化工作台」— 嵌入式看板
+  - 顶部导航只有「工作台」；中部横向链式流水线（五个阶段可点击）。
+  - 下方是一个嵌入式小屏，点击流水线节点切换看板：
+  -   触达→信号台 / 评审→研判台 / 立项工单→工单台 / 派工→派工协作 / 回复→回执台
+  - 派工协作看板保留固定仪表盘与单一流动线规则。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Xenra-SuperAgent · 工作台（嵌入式看板原型）</title>
+<style>
+:root{
+  --bg:#0f1420; --panel:#171e2e; --panel-2:#1e2740; --line:#2b3854;
+  --ink:#e8edf7; --ink-2:#a9b6cf; --ink-3:#6f7f9e;
+  --accent:#5b8cff; --accent-2:#22c1a6; --danger:#ef5b6b; --idle:#7d8aa6;
+  --done:#22c1a6; --ongoing:#5b8cff; --error:#ef5b6b; --warn:#f5a524;
+  --radius:14px; --shadow:0 8px 28px rgba(0,0,0,.35); --flow-dur:5.5s;
+}
+*{box-sizing:border-box} html,body{margin:0;height:100%}
+body{background:radial-gradient(1200px 700px at 12% -10%,#1b2540 0,transparent 60%),var(--bg);
+  color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+button,textarea,input,select{font:inherit;color:inherit}
+.wrap{max-width:1480px;margin:0 auto;padding:0 22px 60px}
+header.top{position:sticky;top:0;z-index:20;background:rgba(15,20,32,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.top-inner{max-width:1480px;margin:0 auto;padding:12px 22px;display:flex;align-items:center;gap:18px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700}
+.brand .logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent-2));
+  display:grid;place-items:center;color:#06122e;font-weight:900}
+.tab{padding:7px 16px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2);color:var(--ink)}
+.top-space{flex:1}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border:1px solid var(--line);border-radius:999px;color:var(--ink-2);background:var(--panel);font-size:12px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--idle);display:inline-block;flex:0 0 auto}
+.dot.done{background:var(--done)}.dot.ongoing{background:var(--ongoing)}.dot.error{background:var(--error)}
+.block{margin-top:20px}.block-head{display:flex;align-items:baseline;gap:12px;margin:0 2px 12px;flex-wrap:wrap}
+.block-head h2{margin:0;font-size:16px}.block-head .hint{color:var(--ink-3);font-size:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+
+/* 请求 */
+.compose{padding:16px}.compose-row{display:flex;gap:12px;align-items:flex-start}
+.compose textarea{flex:1;min-height:70px;resize:vertical;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;outline:none}
+.compose textarea:focus{border-color:var(--accent)}
+.compose .submit{align-self:stretch;padding:0 22px;border:0;border-radius:10px;cursor:pointer;background:linear-gradient(135deg,var(--accent),#436fe0);color:#fff;font-weight:700}
+.compose-meta{display:flex;gap:14px;align-items:center;margin-top:10px;color:var(--ink-3);font-size:12px;flex-wrap:wrap}
+.chip{padding:3px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel-2);color:var(--ink-2)}
+
+/* 顶部临时标签 */
+.top-tabs{display:flex;gap:6px;align-items:center}
+.top-tabs .tab.active{border-color:var(--accent);background:rgba(91,140,255,.14);color:#cfe0ff}
+.top-tabs .tab.temp{border-style:dashed}
+.top-tabs .tab.temp .tab-x{margin-left:8px;color:var(--ink-3);font-size:12px}
+.top-tabs .tab.temp .tab-x:hover{color:var(--danger)}
+/* 待办 + 发起要求布局 */
+.todo-layout{display:grid;grid-template-columns:2fr 1fr;gap:14px;align-items:start}
+.todo-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.todo-card{display:flex;align-items:center;gap:14px;padding:18px;border:1px solid var(--line);border-radius:12px;
+  background:var(--panel-2);cursor:pointer;transition:.15s;text-align:left;color:var(--ink)}
+.todo-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.todo-card .tc-icon{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-size:18px;flex:0 0 auto}
+.todo-card .tc-main{flex:1;min-width:0}
+.todo-card .tc-label{font-size:12px;color:var(--ink-2)}
+.todo-card .tc-num{font-size:28px;font-weight:800;line-height:1.1}
+.todo-card .tc-go{color:var(--ink-3);font-size:16px}
+.todo-card.t-answer .tc-icon{background:rgba(91,140,255,.16);color:#bcd0ff}
+.todo-card.t-review .tc-icon{background:rgba(34,193,166,.16);color:#bff0e7}
+.todo-card.t-blocked .tc-icon{background:rgba(239,91,107,.16);color:#ffc2c9}
+.todo-card.t-system .tc-icon{background:rgba(245,165,36,.16);color:#ffdfa8}
+/* 小的发起要求卡片 */
+.mini-compose{padding:14px;display:flex;flex-direction:column;gap:9px}
+.mini-compose-head{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:var(--ink-2)}
+.mini-compose textarea{min-height:56px;resize:vertical;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:9px 11px;outline:none;font-size:12px}
+.mini-compose textarea:focus{border-color:var(--accent)}
+.mini-compose-fields{display:flex;flex-direction:column;gap:6px}
+.mini-compose-fields label{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ink-3)}
+.mini-compose-fields input,.mini-compose-fields select{flex:1;min-width:0;background:var(--panel-2);border:1px solid var(--line);border-radius:7px;padding:5px 8px;font-size:11px}
+.mini-compose .submit{align-self:stretch;padding:9px;border-radius:9px;font-size:12px}
+/* 处理页 */
+.proc-head{display:flex;align-items:center;gap:14px;margin:4px 2px 18px;flex-wrap:wrap}
+.proc-back{background:transparent;border:1px solid var(--line);border-radius:8px;color:var(--ink-2);padding:6px 12px;cursor:pointer;font-size:12px}
+.proc-back:hover{border-color:var(--accent);color:var(--ink)}
+.proc-crumb{font-size:13px;font-weight:700}
+.proc-session{margin-left:auto}
+.btn-session{background:rgba(91,140,255,.14);border:1px solid var(--accent);border-radius:8px;color:#cfe0ff;padding:6px 14px;cursor:pointer;font-size:12px}
+.proc-grid{display:grid;grid-template-columns:260px 1fr;gap:16px;align-items:start}
+.proc-list{border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:hidden}
+.proc-list .pl-head{padding:10px 13px;font-size:11px;color:var(--ink-3);border-bottom:1px solid var(--line)}
+.proc-list .pl-item{padding:11px 13px;border-bottom:1px solid var(--line);cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px}
+.proc-list .pl-item:last-child{border-bottom:0}
+.proc-list .pl-item:hover{background:rgba(91,140,255,.06)}
+.proc-list .pl-item.on{background:rgba(91,140,255,.14);border-left:3px solid var(--accent)}
+.proc-detail{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:18px;min-height:220px}
+.proc-detail h3{margin:0 0 12px;font-size:15px}
+.proc-field{margin:10px 0}
+.proc-field .pf-label{font-size:11px;color:var(--ink-3);margin-bottom:5px}
+.proc-field .pf-box{border:1px solid var(--line);border-radius:9px;background:var(--panel-2);padding:11px;font-size:12px;color:var(--ink-2);line-height:1.6}
+.proc-field textarea{width:100%;min-height:80px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:10px;outline:none;font-size:12px;resize:vertical}
+.proc-field textarea:focus{border-color:var(--accent)}
+.proc-actions{display:flex;gap:9px;margin-top:14px;flex-wrap:wrap}
+.proc-actions button{padding:7px 15px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);color:var(--ink-2);cursor:pointer;font-size:12px}
+.proc-actions button.primary{background:linear-gradient(135deg,var(--accent),#436fe0);color:#fff;border:0}
+.proc-actions button.danger:hover{border-color:var(--danger);color:#ffc2c9}
+.proc-actions button.green:hover{border-color:var(--accent-2);color:#bff0e7}
+.proc-answered{padding:12px;border:1px solid rgba(34,193,166,.4);border-radius:9px;background:rgba(34,193,166,.08);color:#bff0e7;font-size:12px}
+.proc-group{margin-bottom:18px}
+.proc-group h4{margin:0 0 8px;font-size:13px;color:var(--ink-2);display:flex;align-items:center;gap:7px}
+.health-pill{display:inline-flex;gap:6px;align-items:center;font-size:11px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;color:var(--ink-3)}
+.health-pill.ok{color:#bff0e7;border-color:rgba(34,193,166,.4)}
+.health-pill.bad{color:#ffc2c9;border-color:rgba(239,91,107,.4)}
+/* 配置区入口卡 */
+.config-entries{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:14px}
+.entry-card{display:flex;align-items:center;gap:13px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;
+  background:var(--panel-2);color:var(--ink);cursor:pointer;text-align:left;transition:.15s}
+.entry-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.entry-icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;font-size:17px;flex:0 0 auto;
+  background:rgba(91,140,255,.14);color:#bcd0ff}
+.entry-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.entry-main strong{font-size:13px}
+.entry-main small{font-size:11px;color:var(--ink-3)}
+.entry-go{color:var(--ink-3);font-size:18px}
+/* 配置页通用 */
+.cfg-page{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:16px}
+.role-tabs,.sub-tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.role-tabs button,.sub-tabs button{padding:6px 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);
+  color:var(--ink-2);cursor:pointer;font-size:12px}
+.role-tabs button.on,.sub-tabs button.on{border-color:var(--accent);background:rgba(91,140,255,.14);color:#cfe0ff}
+/* 提示词编辑 */
+.prompt-grid{display:grid;grid-template-columns:230px 1fr;gap:14px;align-items:start}
+.prompt-nav{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.prompt-nav .png{font-size:10px;color:var(--ink-3);padding:8px 11px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--line)}
+.prompt-nav .pni{padding:8px 11px;font-size:12px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;justify-content:space-between}
+.prompt-nav .pni:last-child{border-bottom:0}
+.prompt-nav .pni:hover{background:rgba(91,140,255,.06)}
+.prompt-nav .pni.on{background:rgba(91,140,255,.14);border-left:3px solid var(--accent)}
+.prompt-nav .pni .changed{color:var(--warn);font-size:10px}
+.prompt-edit{border:1px solid var(--line);border-radius:10px;background:var(--panel-2);padding:13px}
+.prompt-edit h4{margin:0 0 6px;font-size:13px}
+.prompt-edit .hintline{font-size:11px;color:var(--ink-3);margin-bottom:8px}
+.prompt-edit textarea{width:100%;min-height:240px;background:#0d1424;border:1px solid var(--line);border-radius:9px;
+  padding:12px;color:var(--ink-2);font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;resize:vertical;outline:none}
+.prompt-edit textarea:focus{border-color:var(--accent)}
+.adv-fold{margin-top:10px}
+.preview-part{border:1px solid var(--line);border-radius:9px;padding:11px;margin-bottom:9px;background:var(--panel-2)}
+.preview-part h5{margin:0 0 6px;font-size:12px}
+.preview-part pre{margin:0;white-space:pre-wrap;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--ink-2)}
+.history-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px;background:var(--panel-2);font-size:12px}
+.history-row .grow{flex:1}
+.save-bar{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:14px}
+.save-bar span{font-size:12px;color:var(--accent-2)}
+/* 接单模式 */
+.auth-mode{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:14px;margin-bottom:14px}
+.auth-mode h4{margin:0 0 10px;font-size:13px}
+.mode-seg{display:flex;gap:8px;flex-wrap:wrap}
+.mode-seg button{flex:1;min-width:150px;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2);
+  color:var(--ink-2);cursor:pointer;text-align:left}
+.mode-seg button.on{border-color:var(--accent);background:rgba(91,140,255,.14)}
+.mode-seg button b{display:block;font-size:13px;margin-bottom:3px}
+.mode-seg button small{font-size:11px;color:var(--ink-3)}
+/* 授权页左右布局 */
+.auth-page{display:grid;grid-template-columns:200px 1fr;gap:16px;align-items:start}
+.auth-nav .ani{padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:12px;color:var(--ink-2)}
+.auth-nav .ani:last-child{border-bottom:0}
+.auth-nav .ani:hover{background:rgba(91,140,255,.06)}
+.auth-nav .ani.on{background:rgba(91,140,255,.14);color:#cfe0ff;border-left:3px solid var(--accent)}
+.auth-nav{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.auth-panel h4{margin:0 0 12px;font-size:13px}
+.rule-row{border:1px solid var(--line);border-radius:9px;margin-bottom:9px;background:var(--panel-2);overflow:hidden}
+.rule-row .rr-head{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;font-size:12px}
+.rule-row .rr-head .grow{flex:1}
+.rule-row .rr-body{padding:0 12px 12px;border-top:1px solid var(--line)}
+.rule-row .rr-body input,.rule-row .rr-body textarea{width:100%;background:#0d1424;border:1px solid var(--line);border-radius:7px;padding:7px 9px;margin-top:7px;color:var(--ink-2);font-size:12px}
+.allow-row,.admit-row{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;margin-bottom:7px;background:var(--panel-2);font-size:12px}
+.allow-row .grow,.admit-row .grow{flex:1}
+.admit-grid{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}
+.admit-grid th,.admit-grid td{border:1px solid var(--line);padding:7px;text-align:center}
+.admit-grid th{background:rgba(255,255,255,.03);color:var(--ink-3)}
+.admit-grid select{background:#0d1424;border:1px solid var(--line);border-radius:6px;padding:3px 6px;color:var(--ink-2);font-size:11px}
+@media(max-width:900px){.todo-layout{grid-template-columns:1fr}.proc-grid{grid-template-columns:1fr}.prompt-grid{grid-template-columns:1fr}.auth-page{grid-template-columns:1fr}.config-entries{grid-template-columns:1fr}}
+
+/* 横向流水线（可点击切换看板） */
+.pipeline{padding:20px 18px 16px;overflow-x:auto}
+.pipe-track{display:flex;min-width:1040px}
+.stage{flex:1;min-width:150px;padding:0 6px}
+.stage-card{border:1px solid var(--line);border-radius:12px;background:var(--panel-2);padding:13px 12px;display:flex;flex-direction:column;gap:8px;position:relative;overflow:hidden;min-height:86px;
+  transition:border-color .15s,box-shadow .15s,transform .15s}
+.stage.clickable .stage-card{cursor:pointer}
+.stage.clickable .stage-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.stage.active .stage-card{border-color:var(--accent);box-shadow:0 0 0 2px rgba(91,140,255,.32),0 6px 18px rgba(0,0,0,.35)}
+.stage-top{display:flex;align-items:center;gap:8px}
+.stage-no{width:22px;height:22px;border-radius:7px;background:#0d1424;border:1px solid var(--line);display:grid;place-items:center;font-size:11px;color:var(--ink-2)}
+.stage-name{font-weight:700;font-size:13px}.stage-state{margin-left:auto;font-size:11px;color:var(--ink-3)}
+.stage-desc{color:var(--ink-2);font-size:12px;min-height:32px}
+.connector{flex:0 0 26px;position:relative;display:grid;place-items:center}
+.connector::before{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:var(--line)}
+.connector .flow{position:absolute;left:0;top:calc(50% - 3px);width:8px;height:6px;border-radius:99px;background:var(--accent);box-shadow:0 0 10px var(--accent);animation:travel var(--flow-dur) linear infinite}
+@keyframes travel{0%{left:-2%;opacity:0}10%{opacity:1}90%{opacity:1}100%{left:96%;opacity:0}}
+
+/* ===== 嵌入式小屏（看板容器） ===== */
+.embed{position:relative;border-radius:16px;background:#121a2b;border:1px solid var(--line);box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 10px 30px rgba(0,0,0,.3);overflow:hidden}
+.embed-bar{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line);background:rgba(91,140,255,.05)}
+.embed-dots{display:flex;gap:6px}.embed-dots i{width:9px;height:9px;border-radius:50%;display:block}
+.embed-title{font-weight:700;font-size:13px}
+.embed-bar .hint{margin-left:auto}
+.board-panel{padding:18px}
+.board-panel[hidden]{display:none}
+
+/* 通用看板组件 */
+.mini-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.mini-card{border:1px solid var(--line);border-radius:10px;background:var(--panel-2);padding:13px}
+.mini-card h4{margin:0 0 8px;font-size:12px;display:flex;align-items:center;gap:7px}
+.mini-card .big{font-size:24px;font-weight:800;line-height:1.1;margin:2px 0 4px}
+.mini-card .meta{font-size:11px;color:var(--ink-3)}
+.mini-card .bar{height:5px;border-radius:99px;background:#0d1424;margin-top:9px;overflow:hidden}
+.mini-card .bar i{display:block;height:100%;border-radius:99px}
+.mini-list{margin-top:14px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.mini-list .lh{padding:8px 12px;font-size:11px;color:var(--ink-3);background:rgba(255,255,255,.02);border-bottom:1px solid var(--line)}
+.mini-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-top:1px solid var(--line);font-size:12px}
+.mini-row:first-of-type{border-top:0}
+.mini-row .grow{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini-row .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--ink-3);font-size:11px}
+.mini-tag{font-size:10px;padding:2px 8px;border:1px solid var(--line);border-radius:999px;color:var(--ink-2);white-space:nowrap}
+.mini-tag.blue{color:#bcd0ff;border-color:rgba(91,140,255,.4)}
+.mini-tag.green{color:#bff0e7;border-color:rgba(34,193,166,.4)}
+.mini-tag.red{color:#ffc2c9;border-color:rgba(239,91,107,.4)}
+.mini-tag.amber{color:#ffdfa8;border-color:rgba(245,165,36,.4)}
+
+/* 评审选择门 */
+.gate-box{border:1px solid var(--line);border-radius:12px;background:var(--panel-2);padding:14px}
+.gate-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:12px}
+.gate-head strong{font-size:13px}
+.gate-head .meta,.gate-foot .meta{font-size:11px;color:var(--ink-3);margin-top:3px}
+.gate-count{margin-left:auto;white-space:nowrap;font-size:11px;color:var(--ink-3)}
+.gate-count b{color:var(--accent);font-size:15px}
+.gate-list{display:flex;flex-direction:column;gap:7px}
+.gate-row{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#121a2b}
+.gate-row.decided-drop{opacity:.45}
+.gate-row .gtag{font-size:10px;padding:2px 7px;border:1px solid var(--line);border-radius:999px;color:var(--ink-3);white-space:nowrap}
+.gate-row .gtext{flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gate-row .gtext .why{color:var(--ink-3);font-size:11px}
+.gate-row .gacts{display:flex;gap:6px;flex:0 0 auto}
+.gate-row .gbtn{padding:4px 10px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--ink-2);font-size:11px;cursor:pointer}
+.gate-row .gbtn.yes:hover,.gate-row .gbtn.yes.on{border-color:var(--accent-2);color:#bff0e7;background:rgba(34,193,166,.12)}
+.gate-row .gbtn.no:hover,.gate-row .gbtn.no.on{border-color:var(--danger);color:#ffc2c9;background:rgba(239,91,107,.12)}
+.gate-foot{display:flex;align-items:center;gap:9px;margin-top:12px;flex-wrap:wrap}
+.gate-foot .meta{margin-left:auto}
+/* 评审状态徽标：可点击推进 */
+.gacts.eval-state{align-items:center}
+.state-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border:1px solid var(--line);border-radius:7px;
+  font-size:11px;color:var(--ink-2);cursor:default;white-space:nowrap}
+.state-badge.blue{color:#bcd0ff;border-color:rgba(91,140,255,.45);cursor:pointer}
+.state-badge.green{color:#bff0e7;border-color:rgba(34,193,166,.45)}
+.state-badge.red{color:#ffc2c9;border-color:rgba(239,91,107,.45)}
+.state-badge:hover{cursor:pointer;filter:brightness(1.15)}
+
+/* 正在派工的工单条 */
+.ticket-strip{display:flex;align-items:stretch;gap:12px;margin:0 2px 16px}
+.ticket-strip-head{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:var(--ink-2);white-space:nowrap;
+  padding-right:12px;border-right:1px solid var(--line)}
+.ticket-strip-cards{display:flex;gap:10px;overflow-x:auto;flex:1}
+.tk-card{display:flex;align-items:center;gap:9px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;
+  background:var(--panel-2);min-width:210px}
+/* 阶段演示切换器（与只读工单卡分开） */
+.phase-switch{display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:flex-start;margin-bottom:12px}
+.phase-label{font-size:11px;color:var(--ink-3);margin-right:4px}
+.phase-btn{padding:4px 9px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--ink-3);
+  font-size:10px;cursor:pointer;white-space:nowrap}
+.phase-btn:hover{border-color:var(--accent);color:var(--ink-2)}
+.phase-btn.on{border-color:var(--accent);color:#cfe0ff;background:rgba(91,140,255,.14)}
+.tk-card.on{border-color:var(--accent);box-shadow:0 0 0 2px rgba(91,140,255,.3)}
+.tk-card .tk-id{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;color:var(--ink-3)}
+.tk-card .tk-main{flex:1;min-width:0}
+.tk-card .tk-title{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tk-card .mini-tag{font-size:10px}
+.tk-card.tk-next{opacity:.7;border-style:dashed}
+
+/* 派工看板：一条泳道 + 四节点 + 阶段驱动流动线 */
+.editbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 2px 14px}
+.editbar .badge{background:rgba(91,140,255,.14);border:1px solid rgba(91,140,255,.35);color:#bcd0ff;padding:2px 9px;border-radius:999px;font-size:11px;margin-right:6px}
+.btn{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;color:var(--ink-2);padding:5px 11px;font-size:12px;cursor:pointer}
+.btn:hover{border-color:var(--accent);color:var(--ink)}
+.btn.on{border-color:var(--accent);background:rgba(91,140,255,.16);color:#cfe0ff}
+.dash{overflow-x:auto;padding:6px 2px 2px}
+.lane{position:relative;min-width:1080px;display:grid;grid-template-columns:repeat(4,1fr);column-gap:100px;align-items:center;
+  padding:28px 20px;border:1px solid var(--line);border-radius:16px;background:rgba(91,140,255,.035)}
+.links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;overflow:visible}
+.links .idle-line{stroke:#3a4a68;stroke-width:2.5;fill:none}
+.links .base{stroke-width:2.5;fill:none;opacity:.3}
+.links .dash{stroke-width:3;fill:none;stroke-dasharray:10 8;animation:dashflow .6s linear infinite}
+.links .dash.rev{animation:dashrev .6s linear infinite}
+@keyframes dashflow{to{stroke-dashoffset:-36}}
+@keyframes dashrev{to{stroke-dashoffset:36}}
+.node{position:relative;z-index:1;background:#1a2338;border:1px solid var(--line);border-radius:11px;padding:11px 12px;
+  box-shadow:0 6px 18px rgba(0,0,0,.35);min-height:136px;transition:box-shadow .2s}
+.node.main{border-color:rgba(91,140,255,.6);box-shadow:0 0 0 1px rgba(91,140,255,.18),0 6px 18px rgba(0,0,0,.35)}
+.node.review{border-color:rgba(245,165,36,.6);box-shadow:0 0 0 1px rgba(245,165,36,.18),0 6px 18px rgba(0,0,0,.35)}
+.node.exec{border-color:rgba(34,193,166,.6);box-shadow:0 0 0 1px rgba(34,193,166,.18),0 6px 18px rgba(0,0,0,.35)}
+.node.reply{border-color:rgba(34,193,166,.5);box-shadow:0 0 0 1px rgba(34,193,166,.14),0 6px 18px rgba(0,0,0,.35)}
+.node.is-running{box-shadow:0 0 0 2px rgba(91,140,255,.4),0 6px 22px rgba(0,0,0,.45)}
+.node.is-running.review{box-shadow:0 0 0 2px rgba(245,165,36,.45),0 6px 22px rgba(0,0,0,.45)}
+.node.is-running.exec,.node.is-running.reply{box-shadow:0 0 0 2px rgba(34,193,166,.45),0 6px 22px rgba(0,0,0,.45)}
+.node .n-head{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.node .n-name{font-size:12px;font-weight:700;flex:1}
+.node .n-state{font-size:10px;color:var(--ink-3);display:flex;align-items:center;gap:5px}
+.node .n-sub{font-size:11px;color:var(--ink-2);line-height:1.45}
+.node .n-meter{height:4px;border-radius:99px;background:#0d1424;margin-top:9px;overflow:hidden}
+.node .n-meter i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .4s}
+.node.review .n-meter i{background:linear-gradient(90deg,#f5a524,#f5c451)}
+.node.exec .n-meter i,.node.reply .n-meter i{background:linear-gradient(90deg,var(--accent-2),#7de3cf)}
+.subagents{margin-top:9px;padding-top:8px;border-top:1px dashed var(--line)}
+.subagents .sa-label{font-size:10px;color:var(--ink-3);margin-bottom:5px}
+.sa{display:flex;align-items:center;gap:6px;padding:4px 6px;margin-top:4px;border:1px solid var(--line);border-radius:6px;background:#121a2b}
+.sa .sa-name{font-size:11px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sa .sa-sub{font-size:10px;color:var(--ink-3)}
+.legend{display:flex;gap:16px;color:var(--ink-3);font-size:11px;margin-top:14px;flex-wrap:wrap}
+.legend .seg{display:flex;align-items:center;gap:6px}
+.legend .ln{width:24px;height:0;border-top:2px dashed;display:inline-block}
+.hintbar{color:var(--ink-3);font-size:11px;margin-top:10px;line-height:1.6}
+
+/* 配置 */
+.config-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;padding:16px;align-items:start}
+.cfg{padding:14px;border:1px solid var(--line);border-radius:11px;background:var(--panel-2)}
+.cfg h3{margin:0 0 10px;font-size:13px}
+.cfg-icon{width:20px;height:20px;border-radius:6px;display:inline-grid;place-items:center;font-size:11px;color:var(--ink-3);background:rgba(255,255,255,.05)}
+.cfg.tone-blue .cfg-icon{color:#bcd0ff;background:rgba(91,140,255,.16)}
+.cfg.tone-green .cfg-icon{color:#bff0e7;background:rgba(34,193,166,.16)}
+.cfg.tone-amber .cfg-icon{color:#ffdfa8;background:rgba(245,165,36,.16)}
+.cfg label{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;color:var(--ink-2);font-size:12px}
+/* 模型配置抽屉：跨满一行；两个类别并排，每类三个横向下拉 */
+.cfg-model{grid-column:1/-1}
+.model-roles{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.model-roles{grid-template-columns:1fr}}
+.model-role{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+.model-role-head{font-size:12px;font-weight:700;color:var(--ink);margin-bottom:8px}
+.model-fields{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.model-field{display:block!important;padding:0!important;min-width:0}
+.model-field>span{display:block;font-size:11px;color:var(--ink-3);margin-bottom:5px}
+.model-field select{width:100%;min-width:0}
+.cfg input,.cfg select{width:130px;background:#0d1424;border:1px solid var(--line);border-radius:7px;padding:5px 8px;outline:none}
+.path-field{display:flex;gap:5px;align-items:center}
+.path-field input{width:120px;min-width:0;font-size:11px}
+.path-browse{flex:0 0 auto;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel-2);color:var(--ink-2);font-size:11px;cursor:pointer}
+.path-browse:hover{border-color:var(--accent);color:var(--ink)}
+/* 来源配置抽屉：默认收起，点击标题展开 */
+.cfg.drawer{padding:0;position:relative}
+.drawer-head{display:flex;align-items:center;gap:9px;width:100%;padding:12px 14px;border:0;background:transparent;
+  color:var(--ink);font-size:13px;font-weight:700;cursor:pointer;text-align:left}
+.drawer-head:hover{background:rgba(255,255,255,.02)}
+.drawer-title{flex:1}
+.drawer-chevron{color:var(--ink-3);font-size:13px;transition:transform .18s}
+/* 悬浮抽屉：展开层绝对定位浮在卡片下方，不撑容器，可遮挡下方内容 */
+.cfg.drawer .cfg-body{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:30;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:14px;
+  box-shadow:0 14px 40px rgba(0,0,0,.55);min-width:280px}
+.cfg.drawer.open .cfg-body{display:block}
+.cfg.drawer.open .drawer-chevron{transform:rotate(180deg)}
+.switch{width:34px;height:20px;border-radius:99px;background:var(--line);position:relative;cursor:pointer}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:var(--ink-3)}
+.switch.on{background:var(--accent)}.switch.on::after{left:17px;background:#fff}
+/* 自动化开关卡片 */
+.auto-card{display:flex;align-items:center;gap:24px;padding:16px 18px;flex-wrap:wrap}
+.auto-info{flex:1;min-width:280px}
+.auto-info h3{margin:0 0 6px;font-size:14px}
+.auto-info p{margin:0;font-size:12px;color:var(--ink-2)}
+.auto-warn{margin-top:8px!important;color:#ffcf8a!important;background:rgba(245,165,36,.1);
+  border:1px solid rgba(245,165,36,.35);border-radius:8px;padding:7px 10px;line-height:1.5}
+.auto-warn span{color:#f5a524;margin-right:4px}
+.auto-actions{display:flex;gap:12px;flex-wrap:wrap}
+.auto-btn{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:150px;padding:10px 16px;
+  border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--ink-2);cursor:pointer;transition:.15s}
+.auto-btn:hover{border-color:var(--accent)}
+.auto-btn.on{border-color:var(--accent-2);background:rgba(34,193,166,.12);color:#bff0e7}
+.auto-btn-title{font-size:13px;font-weight:700}
+.auto-btn-state{font-size:11px;color:var(--ink-3)}
+.auto-btn.on .auto-btn-state{color:#7de3cf}
+.foot{color:var(--ink-3);font-size:12px;margin-top:18px;text-align:center}
+@media(max-width:900px){.config-grid{grid-template-columns:1fr}.mini-grid{grid-template-columns:1fr}.compose-row{flex-direction:column}.compose .submit{align-self:auto;padding:10px}}
+</style>
+</head>
+<body>
+<header class="top"><div class="top-inner">
+  <div class="brand"><span class="logo">X</span><span>Xenra-SuperAgent</span></div>
+  <nav class="top-tabs" id="topTabs">
+    <button class="tab active" type="button" data-nav="workbench">工作台</button>
+    <!-- 临时处理页标签由 JS 注入 -->
+  </nav>
+  <span class="top-space"></span>
+  <span class="pill"><span class="dot done"></span>运行正常</span><span class="pill">主 Session</span>
+</div></header>
+
+<div class="wrap">
+  <!-- 工作台主视图 -->
+  <div id="view-workbench">
+  <section class="block">
+    <div class="block-head"><h2>待办事项</h2><span class="hint">只显示需要你处理的事 · 点卡片进入处理页</span></div>
+
+    <div class="todo-layout">
+      <!-- 待办入口卡片：只显示数量 -->
+      <div class="todo-cards" id="todoCards"><!-- JS 注入 --></div>
+      <!-- 发起要求：小的输入框卡片 -->
+      <div class="card mini-compose">
+        <div class="mini-compose-head"><span class="dot ongoing"></span>发起要求</div>
+        <textarea id="composeText" aria-label="要求内容" placeholder="写一句话，描述要做什么…"></textarea>
+        <div class="mini-compose-fields">
+          <label>目标 <select id="composeTarget"><option>octocat/Hello-World</option><option>飞书</option><option>本地文件夹</option></select></label>
+          <label>范围 <input id="composeScope" type="text" placeholder="可选改动边界"></label>
+          <label>发起人 <input id="composeActor" type="text" value="operator"></label>
+        </div>
+        <button class="submit" type="button" id="submitBtn">提交要求 →</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2>执行流水线</h2><span class="hint">点任意阶段，下方小屏切换到对应看板</span></div>
+    <div class="card pipeline"><div class="pipe-track" id="pipeTrack"></div></div>
+  </section>
+
+  <section class="block">
+    <div class="embed">
+      <div class="embed-bar">
+        <span class="embed-dots"><i style="background:#ef5b6b"></i><i style="background:#f5a524"></i><i style="background:#22c1a6"></i></span>
+        <span class="embed-title" id="embedTitle">派工协作</span>
+        <span class="hint" id="embedHint">点击上方流水线节点切换看板</span>
+      </div>
+
+      <!-- 触达：信号台 -->
+      <div class="board-panel" id="board-trigger" hidden></div>
+      <!-- 评审：研判台 -->
+      <div class="board-panel" id="board-eval" hidden></div>
+      <!-- 立项工单：工单台 -->
+      <div class="board-panel" id="board-ticket" hidden></div>
+      <!-- 派工：派工协作 -->
+      <div class="board-panel" id="board-dispatch">
+        <div class="board-panel" style="padding:0">
+          <div class="ticket-strip">
+            <span class="ticket-strip-head"><span class="dot ongoing"></span>正在派工</span>
+            <div class="ticket-strip-cards" id="ticketStrip"><!-- JS 注入：只读展示 --></div>
+          </div>
+          <div class="dash">
+            <div class="phase-switch" id="phaseSwitch" title="演示：切换当前工单的执行阶段"><!-- JS 注入：阶段演示 --></div>
+            <div class="lane" id="lane"><svg class="links" id="links" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+            <div class="legend">
+              <span class="seg"><span class="ln" style="border-color:var(--accent)"></span>方案运行中 → 提交审查</span>
+              <span class="seg"><span class="ln" style="border-color:var(--danger)"></span>审查未通过 → 方案继续修改提交</span>
+              <span class="seg"><span class="ln" style="border-color:#f5a524"></span>审查通过 → 开工落地+测试</span>
+              <span class="seg"><span class="ln" style="border-color:var(--done)"></span>开工完成 → 回复总结</span>
+              <span class="seg"><span class="ln" style="border-color:#3a4a68"></span>灰色静止（非当前工作段）</span>
+            </div>
+            <div class="hintbar">任意时刻只有「当前工作所在那一段」流动，其余线灰色静止。点上方阶段按钮切换查看。</div>
+          </div>
+        </div>
+      </div>
+      <!-- 回复：回执台 -->
+      <div class="board-panel" id="board-reply" hidden></div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2>配置</h2><span class="hint">来源与模型设置 · 高级配置点卡片进入</span></div>
+    <div class="config-entries">
+      <button type="button" class="entry-card" data-entry="prompts">
+        <span class="entry-icon">✎</span>
+        <span class="entry-main"><strong>提示词配置</strong><small>团队行为用文字描述，按角色编辑评审/执行提示词</small></span>
+        <span class="entry-go">›</span>
+      </button>
+      <button type="button" class="entry-card" data-entry="auth">
+        <span class="entry-icon">⚿</span>
+        <span class="entry-main"><strong>规则与允许名单</strong><small>谁能发起工作 · 研判规则 · 准入表 · 接单模式</small></span>
+        <span class="entry-go">›</span>
+      </button>
+    </div>
+    <div class="card config-grid" id="config"></div>
+    <!-- 自动化开关卡片：跨满一行 -->
+    <div class="card auto-card" style="margin-top:14px">
+      <div class="auto-info">
+        <h3>⚡ 自动化开关</h3>
+        <p>让评审与立项在无需人工逐条确认的情况下自动推进。</p>
+        <p class="auto-warn"><span>⚠</span> 开启自动后有可能产生必要的 token 消耗（自动评审/自动立项会调用模型研判候选）。</p>
+      </div>
+      <div class="auto-actions">
+        <button class="auto-btn" id="autoEval" type="button">
+          <span class="auto-btn-title">开启自动评审</span>
+          <span class="auto-btn-state" id="autoEvalState">当前：关闭</span>
+        </button>
+        <button class="auto-btn" id="autoTicket" type="button">
+          <span class="auto-btn-title">开启自动立项</span>
+          <span class="auto-btn-state" id="autoTicketState">当前：关闭</span>
+        </button>
+      </div>
+    </div>
+  </section>
+  </div><!-- /view-workbench -->
+
+  <!-- ===== 处理页（临时标签，点待办卡片进入） ===== -->
+  <div id="view-process" hidden>
+    <div class="proc-head">
+      <button type="button" class="proc-back" id="procBack" data-back>‹ 返回工作台</button>
+      <span class="proc-crumb" id="procCrumb"></span>
+      <span class="proc-session">
+        <button type="button" class="btn-session" id="procSession">打开执行器 Session ↗</button>
+      </span>
+    </div>
+    <div id="procBody"><!-- JS 按待办类型注入 --></div>
+  </div>
+
+  <!-- 提示词配置页 -->
+  <div id="view-prompts" hidden>
+    <div class="proc-head">
+      <button type="button" class="proc-back" data-back>‹ 返回工作台</button>
+      <span class="proc-crumb">提示词配置</span>
+    </div>
+    <div class="cfg-page">
+      <div class="role-tabs" id="promptRoleTabs"><!-- JS --></div>
+      <div class="sub-tabs" id="promptSubTabs"><!-- JS --></div>
+      <div id="promptBody"><!-- JS --></div>
+      <div class="save-bar"><span id="promptSaveMsg"></span><button type="button" class="btn primary" id="promptSave">保存</button></div>
+    </div>
+  </div>
+
+  <!-- 规则与允许名单页 -->
+  <div id="view-auth" hidden>
+    <div class="proc-head">
+      <button type="button" class="proc-back" data-back>‹ 返回工作台</button>
+      <span class="proc-crumb">规则与允许名单</span>
+    </div>
+    <div class="auth-mode" id="authMode"><!-- JS：接单模式 --></div>
+    <div class="cfg-page auth-page">
+      <div class="auth-nav" id="authNav"><!-- JS --></div>
+      <div id="authBody"><!-- JS --></div>
+    </div>
+  </div>
+
+  <p class="foot">原型 · 嵌入式看板 + 待办处理页 + 高级配置页 · 确认后实装到 src/client</p>
+</div>
+
+<script>
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ===== 顶部流水线（可点击切换看板） ===== */
+const STAGES = [
+  {no:'1',name:'触达',state:'已完成',board:'trigger'},
+  {no:'2',name:'评审',state:'进行中',board:'eval'},
+  {no:'3',name:'立项工单',state:'已立项',board:'ticket'},
+  {no:'4',name:'派工',state:'执行中',board:'dispatch'},
+  {no:'5',name:'回复',state:'等待中',board:'reply'},
+];
+const BOARD_META = {
+  trigger:{title:'信号台', hint:'来源把外部事件翻译成触发，去重后写入线程并扇出'},
+  eval:{title:'研判台', hint:'准入判定 + 主 Session 研判候选，决定是否立项'},
+  ticket:{title:'工单台', hint:'已立项工作的授权、阶段与订阅'},
+  dispatch:{title:'派工协作', hint:'正在派工仅展示当前工单与下一条；右侧可切换阶段演示执行链路'},
+  reply:{title:'回执台', hint:'确认、回答、结果与提问通过渠道回给发起人'},
+};
+let currentBoard='dispatch';
+function renderPipeline(){
+  document.getElementById('pipeTrack').innerHTML = STAGES.map((s,i) => {
+    const active = s.board===currentBoard;
+    return `<div class="stage clickable ${active?'active':''}" data-stage="${i}">
+      <div class="stage-card">
+        <div class="stage-top"><span class="stage-no">${s.no}</span><span class="stage-name">${esc(s.name)}</span>
+          <span class="stage-state"><span class="dot ${s.state==='已完成'||s.state==='已立项'?'done':''}"></span>${esc(s.state)}</span></div>
+        <div class="stage-desc">${BOARD_META[s.board].hint}</div>
+      </div></div>` + (i<STAGES.length-1?'<div class="connector"><span class="flow"></span></div>':'');
+  }).join('');
+}
+document.getElementById('pipeTrack').addEventListener('click', e=>{
+  const el=e.target.closest('[data-stage]'); if(!el)return;
+  switchBoard(STAGES[+el.dataset.stage].board);
+});
+function switchBoard(key){
+  if(!BOARD_META[key]) return;
+  currentBoard=key;
+  document.querySelectorAll('[id^="board-"]').forEach(p=>p.hidden=true);
+  document.getElementById('board-'+key).hidden=false;
+  document.getElementById('embedTitle').textContent=BOARD_META[key].title;
+  document.getElementById('embedHint').textContent=BOARD_META[key].hint;
+  renderPipeline();
+  if(key==='dispatch') requestAnimationFrame(drawLinks);
+}
+
+/* ===== 各看板内容（模拟数据，数据驱动渲染） ===== */
+/* 评审入口待分流队列：
+   decision null=待选 / 'drop'=丢弃（垃圾，零 token）
+   进入评审后 evalState: queued=排队中 / running=评审中 / passed=评审通过 / failed=评审未通过 */
+const EVAL_QUEUE = [
+  {id:'t1', tag:'github', text:'#128 评论 @ 智能体：请修复窄屏溢出', why:'明确请求 · 命中 visual', decision:null, evalState:null},
+  {id:'t2', tag:'github', text:'dependabot: 依赖升级 PR 描述', why:'机器人 · 命中 ci 规则', decision:null, evalState:null},
+  {id:'t3', tag:'feishu', text:'「在吗」「随便看看」等闲聊', why:'无实现意图 · 疑似垃圾', decision:null, evalState:null},
+  {id:'t4', tag:'本地', text:'纠正文档错别字', why:'明确请求 · 命中 copy', decision:null, evalState:null},
+  {id:'t5', tag:'github', text:'CI 失败自动通知（build #3421）', why:'系统事件 · 命中 ci 规则', decision:null, evalState:null},
+  {id:'t6', tag:'feishu', text:'重复粘贴的广告链接', why:'无关内容 · 垃圾', decision:null, evalState:null},
+];
+/* 评审状态展示：label / dot / tag 色；可点击推进的顺序 */
+const EVAL_STATES = {
+  queued:  {label:'排队中',   dot:'',        tag:'',    next:'running'},
+  running: {label:'评审中',   dot:'running', tag:'blue', next:'passed'},
+  passed:  {label:'评审通过', dot:'done',    tag:'green',next:null},
+  failed:  {label:'评审未通过',dot:'error',  tag:'red',  next:null},
+};
+/* 立项前待分流：
+   decision null=待选 / 'reject'=驳回 / 进入立项后 status:
+     creating=立项中（同一时刻一张）/ queued=立项排队中 / done=已立项
+   选「立项」时：若无人在立项→creating；若已有人→queued                    */
+const TICKET_GATE = [
+  {id:'c1', tag:'评审通过', text:'修复设置页窄屏按钮溢出 · T-8f3c', why:'明确 · 命中 visual', decision:null, status:null},
+  {id:'c2', tag:'评审通过', text:'纠正文档错别字 · copy', why:'明确 · 命中 copy', decision:null, status:null},
+  {id:'c3', tag:'评审通过', text:'与 T-8f3c 重复的溢出修复', why:'重复工单 · 建议驳回', decision:null, status:null},
+  {id:'c4', tag:'评审通过', text:'「顺便重构整个前端框架」', why:'超出范围 · 建议驳回', decision:null, status:null},
+];
+const TICKET_STATUS = {
+  creating:{label:'立项中',   dot:'running', tag:'blue',  next:'done'},
+  queued:  {label:'立项排队中',dot:'',        tag:'amber',next:'creating'},
+  done:    {label:'已立项',   dot:'done',    tag:'green',next:null},
+};
+const isCreating = () => TICKET_GATE.some(q=>q.status==='creating');
+function bindTicketGate(){
+  const list=document.getElementById('ticketGateList');
+  const paint=()=>{
+    list.innerHTML=TICKET_GATE.map((q,i)=>{
+      let acts;
+      if(q.decision===null){
+        acts=`<span class="gacts">
+          <button class="gbtn yes" data-a="create">立项</button>
+          <button class="gbtn no" data-a="reject">驳回</button></span>`;
+      } else if(q.decision==='reject' || q.decision==='discard'){
+        acts=`<span class="gacts">
+          <span class="mini-tag red">${q.decision==='discard'?'已丢弃（反悔）':'已驳回'}</span>
+          <button class="gbtn yes" data-a="restore" title="恢复到待选，重新决定">恢复</button>
+        </span>`;
+      } else {
+        // 已进入立项流程：显示状态；点击徽标推进 queued→creating→done
+        const st=TICKET_STATUS[q.status], next=st.next;
+        acts=`<span class="gacts">
+          <span class="state-badge ${st.tag}" title="${next?'点击推进':'已终结'}">
+            <span class="dot ${st.dot}"></span>${esc(st.label)}${next?' ▸':''}</span>
+          ${q.status==='queued' ? `<button class="gbtn no" data-a="discard" title="最后一次反悔机会">丢弃</button>` : ''}
+        </span>`;
+      }
+      const dim = q.decision==='reject' || q.decision==='discard';
+      return `<div class="gate-row ${dim?'decided-drop':''}" data-i="${i}">
+        <span class="gtag">${esc(q.tag)}</span>
+        <span class="gtext">${esc(q.text)} <span class="why">· ${esc(q.why)}</span></span>${acts}</div>`;
+    }).join('');
+    const pending=TICKET_GATE.filter(q=>q.decision===null).length;
+    document.getElementById('ticketGatePending').textContent=pending;
+    document.getElementById('ticketGateSummary').textContent=
+      `待选 ${pending} · 立项中 ${TICKET_GATE.filter(q=>q.status==='creating').length} · 排队 ${TICKET_GATE.filter(q=>q.status==='queued').length} · 已立项 ${TICKET_GATE.filter(q=>q.status==='done').length} · 驳回 ${TICKET_GATE.filter(q=>q.decision==='reject').length} · 反悔丢弃 ${TICKET_GATE.filter(q=>q.decision==='discard').length}`;
+    list.querySelectorAll('.gbtn').forEach(b=>b.onclick=()=>{
+      const i=+b.closest('.gate-row').dataset.i, q=TICKET_GATE[i], a=b.dataset.a;
+      if(a==='reject'){ q.decision='reject'; q.status=null }
+      else if(a==='discard'){ q.decision='discard'; q.status=null }  // 排队中的最后一次反悔
+      else if(a==='restore'){ q.decision=null; q.status=null }       // 恢复到待选，重新决定
+      else if(a==='create'){ q.decision='create'; q.status=isCreating()?'queued':'creating' }
+      paint();
+    });
+    list.querySelectorAll('.state-badge').forEach(badge=>badge.onclick=()=>{
+      const i=+badge.closest('.gate-row').dataset.i, q=TICKET_GATE[i];
+      const next=TICKET_STATUS[q.status]?.next;
+      if(next==='creating' && isCreating()) return; // 已有在立项，排队不能推进
+      if(next){ q.status=next; paint() }
+    });
+  };
+  document.getElementById('ticketGateAllYes').onclick=()=>{
+    TICKET_GATE.forEach(q=>{ if(q.decision===null){ q.decision='create'; q.status=isCreating()?'queued':'creating' } });paint()};
+  document.getElementById('ticketGateAllNo').onclick=()=>{TICKET_GATE.forEach(q=>{if(q.decision===null){q.decision='reject';q.status=null}});paint()};
+  paint();
+}
+function bindGate(){
+  const list=document.getElementById('gateList');
+  const paint=()=>{
+    list.innerHTML=EVAL_QUEUE.map((q,i)=>{
+      const inEval = q.decision==='eval';
+      const st = inEval ? EVAL_STATES[q.evalState] : null;
+      let acts;
+      if(q.decision===null){
+        acts=`<span class="gacts">
+          <button class="gbtn yes" data-a="eval">进入评审</button>
+          <button class="gbtn no" data-a="drop">丢弃</button></span>`;
+      } else if(q.decision==='drop'){
+        acts=`<span class="gacts">
+          <span class="mini-tag red">已丢弃 · 零 token</span>
+          <button class="gbtn yes" data-a="restore" title="恢复到待分流，重新决定">恢复</button>
+        </span>`;
+      } else {
+        // 进入评审：显示状态；点击状态徽标推进 queued→running→passed，另有「未通过」按钮
+        const next = st.next;
+        acts=`<span class="gacts eval-state">
+          <span class="state-badge ${st.tag}" title="${next?'点击推进到「'+EVAL_STATES[next].label+'」':'已终结'}">
+            <span class="dot ${st.dot}"></span>${esc(st.label)}${next?' ▸':''}</span>
+          ${next ? `<button class="gbtn no" data-a="fail">未通过</button>` : ''}
+        </span>`;
+      }
+      return `<div class="gate-row ${q.decision==='drop'?'decided-drop':''}" data-i="${i}">
+        <span class="gtag">${esc(q.tag)}</span>
+        <span class="gtext">${esc(q.text)} <span class="why">· ${esc(q.why)}</span></span>
+        ${acts}</div>`;
+    }).join('');
+    const pending=EVAL_QUEUE.filter(q=>q.decision===null).length;
+    const evalItems=EVAL_QUEUE.filter(q=>q.decision==='eval');
+    document.getElementById('gatePending').textContent=pending;
+    document.getElementById('evalPendingCount').textContent=evalItems.filter(q=>q.evalState==='queued'||q.evalState==='running').length;
+    document.getElementById('evalPassedCount').textContent=evalItems.filter(q=>q.evalState==='passed').length;
+    document.getElementById('evalDroppedCount').textContent=EVAL_QUEUE.filter(q=>q.decision==='drop').length;
+    document.getElementById('gateSummary').textContent=`已分流 ${EVAL_QUEUE.length-pending}/${EVAL_QUEUE.length} 条 · 评审中/排队 ${evalItems.filter(q=>q.evalState==='queued'||q.evalState==='running').length} · 通过 ${evalItems.filter(q=>q.evalState==='passed').length} · 未通过 ${evalItems.filter(q=>q.evalState==='failed').length}`;
+    // 事件
+    list.querySelectorAll('.gbtn').forEach(b=>b.onclick=()=>{
+      const i=+b.closest('.gate-row').dataset.i, q=EVAL_QUEUE[i], a=b.dataset.a;
+      if(a==='eval'){ q.decision='eval'; q.evalState='queued' }
+      else if(a==='drop'){ q.decision='drop'; q.evalState=null }
+      else if(a==='restore'){ q.decision=null; q.evalState=null }  // 恢复丢弃的触达到待分流
+      else if(a==='fail'){ q.evalState='failed' }
+      paint();
+    });
+    list.querySelectorAll('.state-badge').forEach(badge=>badge.onclick=()=>{
+      const i=+badge.closest('.gate-row').dataset.i, q=EVAL_QUEUE[i];
+      const next=EVAL_STATES[q.evalState]?.next;
+      if(next){ q.evalState=next; paint() }
+    });
+  };
+  document.getElementById('gateAllEval').onclick=()=>{EVAL_QUEUE.forEach(q=>{if(q.decision===null){q.decision='eval';q.evalState='queued'}});paint()};
+  document.getElementById('gateAllDrop').onclick=()=>{EVAL_QUEUE.forEach(q=>{if(q.decision===null){q.decision='drop';q.evalState=null}});paint()};
+  paint();
+}
+function renderSimpleBoard(key){
+  const el=document.getElementById('board-'+key);
+  if(key==='trigger'){
+    el.innerHTML=`
+      <div class="mini-grid">
+        <div class="mini-card"><h4><span class="dot done"></span>GitHub 来源</h4><div class="big">12</div><div class="meta">通知 / Issue / PR / CI · 轮询 60s</div><div class="bar"><i style="width:80%;background:var(--accent)"></i></div></div>
+        <div class="mini-card"><h4><span class="dot done"></span>飞书来源</h4><div class="big">8</div><div class="meta">实时事件 / 历史补收 / 话题轮询</div><div class="bar"><i style="width:55%;background:var(--accent-2)"></i></div></div>
+        <div class="mini-card"><h4><span class="dot ongoing"></span>本地</h4><div class="big">3</div><div class="meta">控制台直接提交的要求</div><div class="bar"><i style="width:30%;background:var(--warn)"></i></div></div>
+      </div>
+      <div class="mini-list"><div class="lh">最近触发（进入领域）</div>
+        <div class="mini-row"><span class="mini-tag blue">github</span><span class="grow">#128 评论 @ 智能体：请修复窄屏溢出</span><span class="mono">2 分钟前</span></div>
+        <div class="mini-row"><span class="mini-tag green">feishu</span><span class="grow">群「前端协作」：登录页间距不一致</span><span class="mono">8 分钟前</span></div>
+        <div class="mini-row"><span class="mini-tag amber">本地</span><span class="grow">控制台：升级依赖到最新补丁版</span><span class="mono">14 分钟前</span></div>
+        <div class="mini-row"><span class="mini-tag blue">github</span><span class="grow">默认分支 CI 失败（build #3421）</span><span class="mono">21 分钟前</span></div>
+      </div>`;
+  } else if(key==='eval'){
+    el.innerHTML=`
+      <div class="gate-box">
+        <div class="gate-head">
+          <div><strong>进入评审前的选择门</strong>
+            <div class="meta">先判断这条触达值不值得送进研判——垃圾触达直接在这里丢弃，不消耗研判 token。</div></div>
+          <span class="gate-count">待分流 <b id="gatePending">${EVAL_QUEUE.length}</b> 条</span>
+        </div>
+        <div class="gate-list" id="gateList"></div>
+        <div class="gate-foot">
+          <button class="btn" id="gateAllEval">全部进入评审</button>
+          <button class="btn" id="gateAllDrop">全部丢弃（垃圾）</button>
+          <span class="meta" id="gateSummary"></span>
+        </div>
+      </div>
+      <div class="mini-grid" style="margin-top:14px">
+        <div class="mini-card"><h4><span class="dot ongoing"></span>排队中 / 评审中</h4><div class="big" id="evalPendingCount">0</div><div class="meta">正在消耗研判 token</div><div class="bar"><i style="width:40%;background:var(--accent)"></i></div></div>
+        <div class="mini-card"><h4><span class="dot done"></span>评审通过</h4><div class="big" id="evalPassedCount">0</div><div class="meta">接单立项 / 进入下一阶段</div><div class="bar"><i style="width:30%;background:var(--done)"></i></div></div>
+        <div class="mini-card"><h4><span class="dot error"></span>已丢弃（未进评审）</h4><div class="big" id="evalDroppedCount">${EVAL_QUEUE.filter(q=>q.decision==='drop').length}</div><div class="meta">在入口拦截，零 token 消耗</div><div class="bar"><i style="width:20%;background:var(--danger)"></i></div></div>
+      </div>
+      <div class="mini-list"><div class="lh">已进入评审的候选</div>
+        <div class="mini-row"><span class="mini-tag blue">明确</span><span class="grow">修复设置页窄屏按钮溢出 · 命中 visual</span><span class="mini-tag green">接单</span></div>
+        <div class="mini-row"><span class="mini-tag amber">推断</span><span class="grow">依赖升级带来的构建失败 · 命中 ci 规则</span><span class="mini-tag">待研判</span></div>
+        <div class="mini-row"><span class="mini-tag blue">明确</span><span class="grow">纠正文档中的错别字 · 命中 copy</span><span class="mini-tag green">接单</span></div>
+      </div>`;
+    bindGate();
+  } else if(key==='ticket'){
+    el.innerHTML=`
+      <div class="gate-box">
+        <div class="gate-head">
+          <div><strong>立项前的选择门</strong>
+            <div class="meta">评审通过的候选在这里决定要不要真的立项——重复、越界或价值不高的挡在门外；进入立项排队中的还可在最后关头丢弃（反悔闸门）。</div></div>
+          <span class="gate-count">待立项 <b id="ticketGatePending">${TICKET_GATE.length}</b> 条</span>
+        </div>
+        <div class="gate-list" id="ticketGateList"></div>
+        <div class="gate-foot">
+          <button class="btn" id="ticketGateAllYes">全部立项</button>
+          <button class="btn" id="ticketGateAllNo">全部驳回</button>
+          <span class="meta" id="ticketGateSummary"></span>
+        </div>
+      </div>
+      <div class="mini-grid" style="margin-top:14px">
+        <div class="mini-card"><h4><span class="dot ongoing"></span>执行中</h4><div class="big">2</div><div class="meta">已派工、持有执行器槽位</div><div class="bar"><i style="width:65%;background:var(--accent)"></i></div></div>
+        <div class="mini-card"><h4><span class="dot done"></span>待验收</h4><div class="big">1</div><div class="meta">报告 ready，等人确认</div><div class="bar"><i style="width:35%;background:var(--done)"></i></div></div>
+        <div class="mini-card"><h4><span class="dot error"></span>待回答</h4><div class="big">1</div><div class="meta">执行器提出问题等人回答</div><div class="bar"><i style="width:25%;background:var(--danger)"></i></div></div>
+      </div>
+      <div class="mini-list"><div class="lh">活动工单</div>
+        <div class="mini-row"><span class="mono">T-8f3c</span><span class="grow">修复设置页窄屏按钮溢出</span><span class="mini-tag blue">执行中</span></div>
+        <div class="mini-row"><span class="mono">T-2a91</span><span class="grow">更新 README 安装说明</span><span class="mini-tag green">待验收</span></div>
+        <div class="mini-row"><span class="mono">T-7b02</span><span class="grow">升级构建依赖</span><span class="mini-tag red">待回答</span></div>
+        <div class="mini-row"><span class="mono">T-1c44</span><span class="grow">修正登录页文案（已合并）</span><span class="mini-tag">已结束</span></div>
+      </div>`;
+    bindTicketGate();
+  } else if(key==='reply'){
+    el.innerHTML=`
+      <div class="mini-grid">
+        <div class="mini-card"><h4><span class="dot done"></span>已发送</h4><div class="big">14</div><div class="meta">确认 / 回答 / 结果</div><div class="bar"><i style="width:85%;background:var(--done)"></i></div></div>
+        <div class="mini-card"><h4><span class="dot ongoing"></span>等待中</h4><div class="big">1</div><div class="meta">渠道暂不可用，按退避重试</div><div class="bar"><i style="width:15%;background:var(--warn)"></i></div></div>
+        <div class="mini-card"><h4><span class="dot"></span>已丢弃</h4><div class="big">0</div><div class="meta">会话消失 / 来源停止监听</div><div class="bar"><i style="width:2%;background:var(--idle)"></i></div></div>
+      </div>
+      <div class="mini-list"><div class="lh">回执流水</div>
+        <div class="mini-row"><span class="mini-tag blue">github</span><span class="grow">确认：已接下 #128，开始修复窄屏溢出</span><span class="mini-tag green">已发送</span></div>
+        <div class="mini-row"><span class="mini-tag green">feishu</span><span class="grow">结果：登录页间距已修复，PR #45 已开</span><span class="mini-tag green">已发送</span></div>
+        <div class="mini-row"><span class="mini-tag amber">本地</span><span class="grow">提问：依赖升级需要哪种版本范围？</span><span class="mini-tag amber">等待中</span></div>
+        <div class="mini-row"><span class="mini-tag blue">github</span><span class="grow">回答：按补丁版本升级即可</span><span class="mini-tag green">已发送</span></div>
+      </div>`;
+  }
+}
+['trigger','eval','ticket','reply'].forEach(renderSimpleBoard);
+
+/* ===== 派工看板：方案 → 审查 → 执行 → 回复（单一流动段） ===== */
+const NODES = [
+  {id:'plan',   cls:'main',   name:'主窗口 · 方案',   sub:'产出实现方案；被打回时按审查建议修改后重新提交审查'},
+  {id:'review', cls:'review', name:'审查窗口',       sub:'独立窗口：审查方案，同意则开工，不同意则打回方案修改'},
+  {id:'work',   cls:'exec',   name:'执行窗口 · 开工', sub:'按通过的方案完成落地实现与测试',
+   subs:[{name:'agent-1 实现',sub:'standard·子作业'},{name:'agent-2 测试',sub:'standard·子作业'}]},
+  {id:'reply',  cls:'reply',  name:'主窗口 · 回复',   sub:'落地与测试完成后，汇总结果回给发起人'},
+];
+const SCENES = [
+  {label:'① 方案运行中', st:{plan:'running',review:'idle',work:'idle',reply:'idle'}, flow:{key:'pr',color:'#5b8cff'}},
+  {label:'② 审查未通过·打回', st:{plan:'running',review:'running',work:'idle',reply:'idle'}, flow:{key:'pr',color:'#ef5b6b'}},
+  {label:'③ 审查通过→开工', st:{plan:'done',review:'done',work:'running',reply:'idle'}, flow:{key:'rw',color:'#f5a524'}},
+  {label:'④ 开工完成→回复', st:{plan:'done',review:'done',work:'done',reply:'running'}, flow:{key:'wr',color:'#22c1a6'}},
+];
+/* 正在派工队列：只显示「当前派工中」+「下一条」两张
+   当前卡点击可推进执行阶段（scene），下方泳道随之切换流动段 */
+const DISPATCH_TICKETS = [
+  {id:'T-8f3c', title:'修复设置页窄屏按钮溢出'},
+  {id:'T-2a91', title:'登录页间距与对齐修正'},
+  {id:'T-7b02', title:'升级构建依赖到补丁版'},
+];
+let currentTicket=0, scene=0;
+const STATE_TEXT={running:'运行中',done:'已完成',idle:'待进行'};
+function stageText(s){
+  if(s.flow.key==='pr') return s.st.plan==='running'&&s.st.review==='running'?'打回方案':'方案/审查';
+  if(s.flow.key==='rw') return '开工落地+测试';
+  return '回复总结';
+}
+function renderTicketStrip(){
+  const bar=document.getElementById('ticketStrip');
+  const cur=DISPATCH_TICKETS[currentTicket], next=DISPATCH_TICKETS[currentTicket+1];
+  // 只读展示：当前执行 / 待执行；不点击、不显示阶段文字或进度（下方泳道已表达）
+  let html=`<div class="tk-card on">
+    <span class="tk-id">${esc(cur.id)}</span>
+    <span class="tk-main"><span class="tk-title">${esc(cur.title)}</span></span>
+    <span class="mini-tag blue">当前执行</span>
+  </div>`;
+  if(next) html+=`<div class="tk-card tk-next">
+    <span class="tk-id">${esc(next.id)}</span>
+    <span class="tk-main"><span class="tk-title">${esc(next.title)}</span></span>
+    <span class="mini-tag">待执行</span>
+  </div>`;
+  bar.innerHTML=html;
+}
+/** 阶段演示切换器（在泳道下方，独立于只读工单条；实装后由真实状态驱动）。 */
+function renderPhaseSwitch(){
+  const box=document.getElementById('phaseSwitch');
+  if(!box) return;
+  box.innerHTML=`<span class="phase-label">阶段演示 ▸</span>`+SCENES.map((s,i)=>
+    `<button class="phase-btn ${i===scene?'on':''}" data-scene="${i}">${esc(s.label.replace(/^\d+ /,''))}</button>`).join('');
+  box.querySelectorAll('.phase-btn').forEach(b=>b.onclick=()=>{
+    scene=+b.dataset.scene; renderPhaseSwitch(); renderNodes(); requestAnimationFrame(drawLinks);
+  });
+}
+function renderNodes(){
+  const lane=document.getElementById('lane');
+  lane.querySelectorAll('.node').forEach(n=>n.remove());
+  const st=SCENES[scene].st;
+  NODES.forEach(n=>{
+    const state=st[n.id], el=document.createElement('div');
+    el.className=`node ${n.cls} is-${state}`; el.dataset.id=n.id;
+    const dot=state==='running'?'running':state==='done'?'done':'';
+    const prog=state==='done'?100:state==='running'?62:0;
+    el.innerHTML=`<div class="n-head"><span class="n-name">${esc(n.name)}</span>
+        <span class="n-state"><span class="dot ${dot}"></span>${STATE_TEXT[state]}</span></div>
+      <div class="n-sub">${esc(n.sub)}</div>
+      <div class="n-meter"><i style="width:${prog}%"></i></div>
+      ${n.subs?`<div class="subagents"><div class="sa-label">└ 该窗口开的子智能体</div>${n.subs.map(a=>
+        `<div class="sa"><span class="dot ${state==='idle'?'':'running'}"></span><span class="sa-name">${esc(a.name)}</span><span class="sa-sub">${esc(a.sub)}</span></div>`).join('')}</div>`:''}`;
+    lane.appendChild(el);
+  });
+}
+function drawLinks(){
+  if(currentBoard!=='dispatch') return;
+  const lane=document.getElementById('lane'), svg=document.getElementById('links');
+  if(!lane||!svg) return;
+  const lb=lane.getBoundingClientRect();
+  svg.setAttribute('viewBox',`0 0 ${lb.width} ${lb.height}`);
+  svg.style.width=lb.width+'px'; svg.style.height=lb.height+'px';
+  const box=id=>lane.querySelector(`.node[data-id="${id}"]`)?.getBoundingClientRect();
+  const edge=(id,side)=>{const b=box(id);if(!b)return null;
+    return side==='right'?{x:b.right-lb.left-3,y:(b.top+b.bottom)/2-lb.top}
+                        :{x:b.left-lb.left+3,y:(b.top+b.bottom)/2-lb.top};};
+  const active=SCENES[scene].flow;
+  const line=(a,b)=>`M ${a.x} ${a.y} L ${b.x} ${b.y}`;
+  const seg=(key,from,to,color)=>{
+    const a=edge(from,'right'), b=edge(to,'left'); if(!a||!b)return '';
+    const d=line(a,b);
+    if(active.key===key) return `<path class="base" d="${d}" stroke="${color}"/><path class="dash" d="${d}" stroke="${color}"/>`;
+    return `<path class="idle-line" d="${d}"/>`;
+  };
+  let s='';
+  const a=edge('plan','right'), b=edge('review','left');
+  if(a&&b){
+    const d=line(a,b);
+    if(active.key==='pr') s+=`<path class="base" d="${d}" stroke="${active.color}"/><path class="dash" d="${d}" stroke="${active.color}"/>`;
+    else s+=`<path class="idle-line" d="${d}"/>`;
+  }
+  s+=seg('rw','review','work','#f5a524');
+  s+=seg('wr','work','reply','#22c1a6');
+  svg.innerHTML=s;
+}
+window.addEventListener('resize',()=>{ if(currentBoard==='dispatch') drawLinks() });
+/* 自动化开关：原型演示切换；实装后接 settings 的自动评审/自动立项配置 */
+[['autoEval','autoEvalState','开启自动评审'],['autoTicket','autoTicketState','开启自动立项']].forEach(([id,stateId,label])=>{
+  const btn=document.getElementById(id), state=document.getElementById(stateId);
+  btn.onclick=()=>{
+    const on=!btn.classList.contains('on');
+    btn.classList.toggle('on',on);
+    btn.querySelector('.auto-btn-title').textContent=on?label.replace('开启','关闭'):label;
+    state.textContent=on?'当前：已开启':'当前：关闭';
+  };
+});
+
+/* 配置（占位） */
+const CONFIG=[
+  {title:'GitHub',icon:'◈',tone:'blue',rows:[
+    {label:'监听仓库',type:'text',value:'octocat/Hello-World'},
+    {label:'智能体 CLI',type:'text',value:'gh-agent'},
+    {label:'工作目录',type:'path',value:'D:\\work\\octocat-Hello-World'},
+    {label:'接收新 Issue',type:'switch',value:true},
+    {label:'接收新 PR',type:'switch',value:true},
+    {label:'接收评论',type:'switch',value:true},
+    {label:'接收 CI 变化',type:'switch',value:false},
+    {label:'轮询间隔(秒)',type:'number',value:60},
+    {label:'失败几次报异常',type:'number',value:3}]},
+  {title:'飞书',icon:'✈',tone:'green',rows:[
+    {label:'机器人 CLI',type:'text',value:'lark-bot'},
+    {label:'工作目录',type:'path',value:'D:\\work\\feishu-space'},
+    {label:'接收的群',type:'text',value:'oc_9f8e7d6c…'},
+    {label:'其他群',type:'select',value:'mentions',options:['none','mentions']},
+    {label:'接收私聊',type:'switch',value:true},
+    {label:'每页消息数',type:'number',value:20},
+    {label:'链接查询时限(ms)',type:'number',value:5000}]},
+  {title:'本地',icon:'▣',tone:'amber',rows:[
+    {label:'可提要求的账号',type:'text',value:'operator'},
+    {label:'工作文件夹 / 路径',type:'path',value:'D:\\projects\\demo'},
+    {label:'允许名单为空即无人',type:'switch',value:true}]},
+  {title:'模型配置',icon:'✦',tone:'model',kind:'model',roles:[
+    {name:'评审模型', provider:'workbuddy', model:'hy4flash-free', effort:'high'},
+    {name:'执行模型', provider:'workbuddy', model:'hy4flash-free', effort:'high'},
+  ]},
+];
+/* 服务商 / 模型 / 推理强度 三个下拉的可选项（原型，实装接 DSH modelCatalog） */
+const MODEL_OPTIONS={
+  provider:['workbuddy','openai','anthropic','deepseek'],
+  model:['hy4flash-free','hy4flash','gpt-4o','claude-sonnet-4','deepseek-chat'],
+  effort:['low','medium','high'],
+};
+function selectRow(label,key,value){
+  return `<label class="model-field"><span>${label}</span><select data-model-key="${key}">${
+    MODEL_OPTIONS[key].map(o=>`<option ${o===value?'selected':''}>${o}</option>`).join('')}</select></label>`;
+}
+function renderConfig(){
+  document.getElementById('config').innerHTML=CONFIG.map(c=>{
+    if(c.kind==='model'){
+      const roleBlock=(role,i)=>`<div class="model-role">
+        <div class="model-role-head">${esc(role.name)}</div>
+        <div class="model-fields">
+          ${selectRow('服务商','provider',role.provider)}
+          ${selectRow('模型','model',role.model)}
+          ${selectRow('推理强度（可选）','effort',role.effort)}
+        </div>
+      </div>`;
+      return `<div class="cfg cfg-model drawer tone-model" data-drawer>
+        <button type="button" class="drawer-head" aria-expanded="false">
+          <span class="cfg-icon">${c.icon}</span><span class="drawer-title">${esc(c.title)}</span>
+          <span class="drawer-chevron">▾</span>
+        </button>
+        <div class="cfg-body"><div class="model-roles">${c.roles.map(roleBlock).join('')}</div></div></div>`;
+    }
+    const body = `<div class="cfg-body">${c.rows.map(r=>{
+        if(r.type==='switch') return `<label>${esc(r.label)}<span class="switch ${r.value?'on':''}"></span></label>`;
+        if(r.type==='select') return `<label>${esc(r.label)}<select>${r.options.map(o=>`<option ${o===r.value?'selected':''}>${o}</option>`).join('')}</select></label>`;
+        if(r.type==='path') return `<label>${esc(r.label)}<span class="path-field"><input type="text" class="dt-mono" value="${esc(r.value)}" spellcheck="false"><button type="button" class="path-browse" title="选择文件夹">浏览…</button></span></label>`;
+        return `<label>${esc(r.label)}<input type="${r.type}" value="${esc(r.value)}"></label>`;
+      }).join('')}</div>`;
+    if(c.tone){
+      // 来源卡收成抽屉：点击标题展开/收起
+      return `<div class="cfg drawer ${'tone-'+c.tone}" data-drawer>
+        <button type="button" class="drawer-head" aria-expanded="false">
+          <span class="cfg-icon">${c.icon}</span><span class="drawer-title">${esc(c.title)}</span>
+          <span class="drawer-chevron">▾</span>
+        </button>${body}</div>`;
+    }
+    return `<div class="cfg ${c.tone?'tone-'+c.tone:''}"><h3><span class="cfg-icon">${c.icon}</span>${esc(c.title)}</h3>${body}</div>`;
+  }).join('');
+  document.querySelectorAll('.switch').forEach(s=>s.onclick=()=>s.classList.toggle('on'));
+  document.querySelectorAll('[data-drawer] .drawer-head').forEach(head=>head.onclick=()=>{
+    const box=head.closest('[data-drawer]');
+    const open=box.classList.toggle('open');
+    head.setAttribute('aria-expanded',String(open));
+  });
+}
+/* ===== 待办事项看板 + 处理页 ===== */
+const TODO = {
+  answer:{label:'待回答', icon:'❓', cls:'t-answer', crumb:'待回答',
+    items:[
+      {id:'q1', ticket:'T-8f3c', title:'修复设置页窄屏溢出', q:'溢出阈值用 768px 还是按容器宽度判断？现有标准不确定。',
+       ctx:'来自 #128 的评论，命中 visual 规则；改动涉及断点行为，需要你定标准。', askedBy:'#128 · octocat', answered:false},
+      {id:'q2', ticket:'T-7b02', title:'升级构建依赖', q:'依赖升级到补丁版即可，还是要跟大版本？',
+       ctx:'来自工作台请求；影响范围取决于你的选择。', askedBy:'本地 · operator', answered:false},
+    ]},
+  review:{label:'待验收', icon:'✓', cls:'t-review', crumb:'待验收',
+    items:[
+      {id:'r1', ticket:'T-2a91', title:'更新 README 安装说明', report:'已补齐本地与 GitHub 两种安装步骤，附前后对比截图。', evidence:'README.md 第 12–48 行；证据确凿，无公开接口改动。'},
+      {id:'r2', ticket:'T-9c10', title:'修正登录页文案错别字', report:'按 copy 规则修正 3 处错别字，未改产品承诺。', evidence:'login.tsx；diff 仅文案。'},
+    ]},
+  blocked:{label:'受阻/失败', icon:'⚠', cls:'t-blocked', crumb:'受阻/失败',
+    items:[
+      {id:'b1', ticket:'T-4d55', title:'接入支付 SDK', reason:'blocked'},
+      {id:'b2', ticket:'T-6e21', title:'重构数据层', reason:'failed'},
+    ]},
+  system:{label:'系统问题', icon:'⚙', cls:'t-system', crumb:'系统问题',
+    groups:[
+      {name:'来源', items:[{t:'GitHub 来源轮询连续 3 次失败', d:'pollFailures: 401 bad credentials'}, {t:'飞书事件消费者掉线', d:'event consumer exited'}]},
+      {name:'发信', items:[{t:'回执发送失败 3 次', d:'channel #128: 403 forbidden'}]},
+      {name:'评估', items:[{t:'1 个评估超时未决', d:'thread github:128 · deadline exceeded'}]},
+      {name:'配置', items:[]},
+    ]},
+};
+function todoCount(key){ return TODO[key].items ? TODO[key].items.length : TODO[key].groups.reduce((s,g)=>s+g.items.length,0) }
+function renderTodo(){
+  const host=document.getElementById('todoCards');
+  host.innerHTML=Object.entries(TODO).map(([key,v])=>`<button type="button" class="todo-card ${v.cls}" data-todo="${key}">
+    <span class="tc-icon">${v.icon}</span>
+    <span class="tc-main"><span class="tc-label">${esc(v.label)}</span><div class="tc-num">${todoCount(key)}</div></span>
+    <span class="tc-go">›</span></button>`).join('');
+  host.querySelectorAll('[data-todo]').forEach(b=>b.onclick=()=>openProcess(b.dataset.todo));
+}
+/* 页面切换：workbench <-> 各类临时页 */
+let activeTodo=null, activeItem=null;
+const VIEWS=['view-workbench','view-process','view-prompts','view-auth'];
+function showView(viewId){
+  VIEWS.forEach(id=>{const el=document.getElementById(id); if(el) el.hidden=(id!==viewId)});
+}
+function setTempTab(label){
+  const nav=document.getElementById('topTabs');
+  nav.querySelectorAll('.tab.temp').forEach(t=>t.remove());
+  const tab=document.createElement('button');
+  tab.className='tab active temp'; tab.type='button';
+  tab.innerHTML=`${esc(label)} <span class="tab-x" title="关闭">×</span>`;
+  tab.querySelector('.tab-x').onclick=e=>{e.stopPropagation();closeProcess()};
+  nav.appendChild(tab);
+  nav.querySelector('[data-nav="workbench"]').classList.remove('active');
+}
+function openProcess(key){
+  activeTodo=key; activeItem=null;
+  showView('view-process');
+  document.getElementById('procCrumb').textContent=TODO[key].crumb;
+  setTempTab(TODO[key].crumb);
+  renderProcess();
+}
+function closeProcess(){
+  activeTodo=null; activeItem=null;
+  showView('view-workbench');
+  const nav=document.getElementById('topTabs');
+  nav.querySelectorAll('.tab.temp').forEach(t=>t.remove());
+  nav.querySelector('[data-nav="workbench"]').classList.add('active');
+}
+document.querySelector('[data-nav="workbench"]').onclick=closeProcess;
+document.querySelectorAll('[data-back]').forEach(b=>b.onclick=closeProcess);
+document.getElementById('procSession').onclick=()=>{
+  const t=activeItem&&TODO[activeTodo].items&&TODO[activeTodo].items.find(i=>i.id===activeItem);
+  const label=t?`worker-${t.ticket}`:'worker-<当前工单>';
+  alert('（原型）将打开 DSH Session：'+label);
+};
+function renderProcess(){
+  const body=document.getElementById('procBody');
+  if(activeTodo==='answer') body.innerHTML=renderAnswer();
+  else if(activeTodo==='review') body.innerHTML=renderReview();
+  else if(activeTodo==='blocked') body.innerHTML=renderBlocked();
+  else if(activeTodo==='system') body.innerHTML=renderSystem();
+  bindProcess();
+}
+function renderAnswer(){
+  const list=TODO.answer.items;
+  if(activeItem===null) activeItem=list.find(i=>!i.answered)?.id ?? list[0].id;
+  const it=list.find(i=>i.id===activeItem);
+  const left=list.map(i=>`<div class="pl-item ${i.id===activeItem?'on':''}" data-item="${i.id}">
+    <span class="dot ${i.answered?'done':'ongoing'}"></span>${esc(i.ticket)} · ${esc(i.title.slice(0,10))}</div>`).join('');
+  return `<div class="proc-grid">
+    <div class="proc-list"><div class="pl-head">待回答 (${list.filter(i=>!i.answered).length})</div>${left}</div>
+    <div class="proc-detail">
+      ${it.answered ? `<div class="proc-answered">✓ 已回答 · ${esc(it.ticket)} — 该问题已送回执行器。</div>` : `
+      <h3>${esc(it.ticket)} · ${esc(it.title)}</h3>
+      <div class="proc-field"><div class="pf-label">问题</div><div class="pf-box">${esc(it.q)}</div></div>
+      <div class="proc-field"><div class="pf-label">上下文</div><div class="pf-box">${esc(it.ctx)}<br>提出人：${esc(it.askedBy)}</div></div>
+      <div class="proc-field"><div class="pf-label">你的回答</div><textarea id="answerText" placeholder="写一句明确的回答…"></textarea></div>
+      <div class="proc-actions"><button class="primary" data-act="answer-submit">提交回答</button></div>`}
+    </div></div>`;
+}
+function renderReview(){
+  const list=TODO.review.items;
+  if(activeItem===null) activeItem=list[0].id;
+  const it=list.find(i=>i.id===activeItem);
+  const left=list.map(i=>`<div class="pl-item ${i.id===activeItem?'on':''}" data-item="${i.id}"><span class="dot ongoing"></span>${esc(i.ticket)} · ${esc(i.title.slice(0,10))}</div>`).join('');
+  return `<div class="proc-grid">
+    <div class="proc-list"><div class="pl-head">待验收 (${list.length})</div>${left}</div>
+    <div class="proc-detail">
+      <h3>${esc(it.ticket)} · ${esc(it.title)}</h3>
+      <div class="proc-field"><div class="pf-label">结果报告</div><div class="pf-box">${esc(it.report)}</div></div>
+      <div class="proc-field"><div class="pf-label">证据</div><div class="pf-box">${esc(it.evidence)}</div></div>
+      <div class="proc-actions">
+        <button class="green" data-act="review-pass">通过 / 接受</button>
+        <button class="danger" data-act="review-reject">打回返工</button>
+      </div>
+      <div id="reviewResult"></div>
+    </div></div>`;
+}
+function renderBlocked(){
+  const list=TODO.blocked.items;
+  if(activeItem===null) activeItem=list[0].id;
+  const it=list.find(i=>i.id===activeItem);
+  const left=list.map(i=>`<div class="pl-item ${i.id===activeItem?'on':''}" data-item="${i.id}"><span class="dot error"></span>${esc(i.ticket)} · ${esc(i.title.slice(0,10))}</div>`).join('');
+  return `<div class="proc-grid">
+    <div class="proc-list"><div class="pl-head">受阻/失败 (${list.length})</div>${left}</div>
+    <div class="proc-detail">
+      <h3>${esc(it.ticket)} · ${esc(it.title)}</h3>
+      <div class="proc-field"><div class="pf-label">状态</div><div class="pf-box">${it.reason==='blocked'?'受阻 blocked':'失败 failed'} · ${esc(it.reason)}</div></div>
+      <div class="proc-field"><div class="pf-label">提示</div><div class="pf-box">此页只查看；排障与重试都到执行器 Session 里做。</div></div>
+      <div class="proc-actions"><button class="primary" data-act="open-session">打开执行器 Session ↗</button></div>
+    </div></div>`;
+}
+function renderSystem(){
+  let html='';
+  TODO.system.groups.forEach(g=>{
+    html+=`<div class="proc-group"><h4>${esc(g.name)} <span class="health-pill ${g.items.length?'bad':'ok'}">${g.items.length||'正常'}</span></h4>`;
+    if(g.items.length) html+=g.items.map(i=>`<div class="proc-field"><div class="pf-box"><b>${esc(i.t)}</b><br><span style="color:var(--ink-3)">${esc(i.d)}</span></div></div>`).join('');
+    html+='</div>';
+  });
+  const health=`<div class="proc-group"><h4>健康状态</h4>
+    <span class="health-pill bad">GitHub 来源</span> <span class="health-pill bad">发信</span>
+    <span class="health-pill ok">评估</span> <span class="health-pill ok">运行时</span></div>`;
+  return health+html;
+}
+function bindProcess(){
+  document.querySelectorAll('#procBody [data-item]').forEach(el=>el.onclick=()=>{activeItem=el.dataset.item;renderProcess()});
+  const submit=document.querySelector('[data-act="answer-submit"]');
+  if(submit) submit.onclick=()=>{
+    const it=TODO.answer.items.find(i=>i.id===activeItem);
+    it.answered=true; renderProcess(); renderTodo();
+  };
+  const pass=document.querySelector('[data-act="review-pass"]');
+  if(pass) pass.onclick=()=>{document.getElementById('reviewResult').innerHTML='<div class="proc-answered" style="margin-top:14px">✓ 已通过，工单完成。</div>'};
+  const rej=document.querySelector('[data-act="review-reject"]');
+  if(rej) rej.onclick=()=>{document.getElementById('reviewResult').innerHTML='<div class="proc-answered" style="margin-top:14px;border-color:rgba(239,91,107,.4);color:#ffc2c9;background:rgba(239,91,107,.08)">↩ 已打回，执行器将返工。</div>'};
+  const ob=document.querySelector('[data-act="open-session"]');
+  if(ob) ob.onclick=()=>document.getElementById('procSession').click();
+}
+document.getElementById('submitBtn').onclick=()=>{
+  const ta=document.getElementById('composeText');
+  if(!ta.value.trim()) return;
+  ta.value=''; document.getElementById('composeScope').value='';
+  const old=document.getElementById('submitBtn').textContent;
+  document.getElementById('submitBtn').textContent='已进入触达排队 ✓';
+  setTimeout(()=>document.getElementById('submitBtn').textContent=old,1600);
+};
+
+/* ===== 提示词配置页 ===== */
+const PROMPT_ROLES=['评审','执行'];
+const PROMPT_SECTIONS={
+  '评审':[
+    {key:'communication',name:'沟通',team:true,changed:false,text:'用平实的语言回复。消息要短，一次只说一件事。'},
+    {key:'scope',name:'范围',team:true,changed:true,text:'只做被要求的局部改动；需要公开接口或设计决定时停下提问。'},
+    {key:'delivery',name:'交付',team:true,changed:false,text:'结果可评审时才说就绪，附真实的前后证据。'},
+    {key:'part/rules',name:'研判规则（内置）',team:false,changed:false,text:'对每条启用的规则判断一次，命中才可接单。'},
+    {key:'part/admission',name:'准入（内置）',team:false,changed:false,text:'按准入表判断发起者强度，权限不可被消息内容改写。'},
+    {key:'skill/github',name:'技能 · GitHub',team:false,changed:false,text:'读取仓库、PR 与 CI 的说明。'},
+  ],
+  '执行':[
+    {key:'communication',name:'沟通',team:true,changed:false,text:'接单时一句话确认，进展留在内部。'},
+    {key:'scope',name:'范围',team:true,changed:true,text:'按授权范围做到底，不扩大到别人的工作。'},
+    {key:'delivery',name:'交付',team:true,changed:false,text:'交付可评审结果，如实标草稿与失败。'},
+    {key:'part/work',name:'执行约定（内置）',team:false,changed:false,text:'局部改到底；需要设计决定时带明确问题停下。'},
+    {key:'part/handoff',name:'交回（内置）',team:false,changed:false,text:'超出范围的后续交回主 Session，不自行回答。'},
+  ],
+};
+const PROMPT_VERSIONS=[
+  {rev:12,time:'今天 09:41',source:'你',changed:'范围、沟通'},
+  {rev:11,time:'昨天 18:20',source:'你',changed:'交付'},
+  {rev:10,time:'11-15 14:03',source:'默认',changed:'初始版本'},
+];
+let pRole='评审', pTab='edit', pSection='communication';
+const PROMPT_DRAFT={}; // role:key -> text（草稿覆盖）
+function pText(sec){ return PROMPT_DRAFT[pRole+':'+sec.key] ?? sec.text }
+function openPrompts(){ showView('view-prompts'); setTempTab('提示词配置'); pRole='评审'; pTab='edit'; pSection='communication'; renderPrompts() }
+function renderPrompts(){
+  const rt=document.getElementById('promptRoleTabs');
+  rt.innerHTML=PROMPT_ROLES.map(r=>`<button class="${r===pRole?'on':''}" data-role="${r}">${esc(r)}</button>`).join('');
+  rt.querySelectorAll('[data-role]').forEach(b=>b.onclick=()=>{pRole=b.dataset.role;pSection=PROMPT_SECTIONS[pRole][0].key;renderPrompts()});
+  const st=document.getElementById('promptSubTabs');
+  st.innerHTML=[['edit','编辑'],['preview','完整预览'],['history','历史']].map(([k,l])=>`<button class="${k===pTab?'on':''}" data-tab="${k}">${l}</button>`).join('');
+  st.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{pTab=b.dataset.tab;renderPrompts()});
+  const body=document.getElementById('promptBody');
+  if(pTab==='edit') body.innerHTML=renderPromptEdit();
+  else if(pTab==='preview') body.innerHTML=renderPromptPreview();
+  else body.innerHTML=renderPromptHistory();
+  bindPrompts();
+  document.getElementById('promptSaveMsg').textContent='';
+}
+function renderPromptEdit(){
+  const secs=PROMPT_SECTIONS[pRole];
+  if(!secs.find(s=>s.key===pSection)) pSection=secs[0].key;
+  const cur=secs.find(s=>s.key===pSection);
+  const nav=secs.map(s=>`<div class="pni ${s.key===pSection?'on':''}" data-sec="${s.key}"><span>${esc(s.name)}</span>${s.changed?'<span class="changed">已改</span>':''}</div>`).join('');
+  return `<div class="prompt-grid">
+    <div class="prompt-nav"><div class="png">团队小节 · 可改</div>${secs.filter(s=>s.team).map(s=>`<div class="pni ${s.key===pSection?'on':''}" data-sec="${s.key}"><span>${esc(s.name)}</span>${s.changed?'<span class="changed">已改</span>':''}</div>`).join('')}
+      <div class="png">高级 · 内置部件与技能</div>${secs.filter(s=>!s.team).map(s=>`<div class="pni ${s.key===pSection?'on':''}" data-sec="${s.key}"><span>${esc(s.name)}</span></div>`).join('')}</div>
+    <div class="prompt-edit"><h4>${esc(cur.name)}</h4>
+      <div class="hintline">${cur.team?'团队小节 · 评审与执行共用':'高级 · 可覆盖内置文本'}</div>
+      <textarea id="promptText">${esc(pText(cur))}</textarea></div>
+  </div>`;
+}
+function renderPromptPreview(){
+  const secs=PROMPT_SECTIONS[pRole];
+  return `<div class="hintline" style="font-size:11px;color:var(--ink-3);margin-bottom:10px">${esc(pRole)}模型目前组装的提示词（编辑改动即时反映）：</div>`
+    +secs.map(s=>`<div class="preview-part"><h5>${esc(s.name)}</h5><pre>${esc(pText(s))}</pre></div>`).join('');
+}
+function renderPromptHistory(){
+  return `<div class="hintline" style="font-size:11px;color:var(--ink-3);margin-bottom:10px">每次保存一个版本，可恢复到任一版本。</div>`
+    +PROMPT_VERSIONS.map(v=>`<div class="history-row"><span class="mono">r${v.rev}</span><span class="grow">${esc(v.time)} · ${esc(v.source)} · 改动：${esc(v.changed)}</span><button class="btn" data-restore="${v.rev}">恢复</button></div>`).join('');
+}
+function bindPrompts(){
+  document.querySelectorAll('#promptBody [data-sec]').forEach(el=>el.onclick=()=>{pSection=el.dataset.sec;renderPrompts()});
+  const ta=document.getElementById('promptText');
+  if(ta) ta.oninput=()=>{PROMPT_DRAFT[pRole+':'+pSection]=ta.value};
+  document.querySelectorAll('#promptBody [data-restore]').forEach(b=>b.onclick=()=>{
+    document.getElementById('promptSaveMsg').textContent='已载入 r'+b.dataset.restore+'（需点保存生效）';
+  });
+}
+document.getElementById('promptSave').onclick=()=>{
+  document.getElementById('promptSaveMsg').textContent='✓ 已保存修订 r13 · 下次模型请求生效';
+};
+
+/* ===== 规则与允许名单页 ===== */
+const AUTH_NAV=[['allowed','允许名单'],['rules','研判规则'],['admission','准入表']];
+const MODES=[['off','只记录','不研判、不接单，适合刚开始'],['observe','只观察','研判候选但只记录不立项'],['auto','自动','命中规则自动接单（谨慎）']];
+let authTab='allowed', authMode='observe';
+const ALLOW_DATA={
+  'GitHub':[{id:'octocat',name:'octocat'},{id:'alice',name:'Alice'}],
+  '飞书':[{id:'ou_1a2b',name:'张三'},{id:'ou_3c4d',name:'李四'}],
+  '本地':[{id:'operator',name:'operator'}],
+};
+const RULES=[
+  {id:'copy',name:'Copy fixes',on:true,inst:'明确要求纠正错别字、措辞、标点或现有翻译。'},
+  {id:'visual',name:'Visual fixes',on:true,inst:'明确要求修正局部间距、对齐、溢出，需有指定目标或客观标准。'},
+];
+const ADMISSION_ROWS=[
+  {id:'issue',name:'新 Issue',cells:['inferred','ignore','ignore']},
+  {id:'comments',name:'评论',cells:['inferred','explicit','ignore']},
+  {id:'ci',name:'CI',cells:['—','—','inferred']},
+];
+function openAuth(){ showView('view-auth'); setTempTab('规则与允许名单'); renderAuth() }
+function renderAuth(){
+  const m=document.getElementById('authMode');
+  m.innerHTML='<h4>接单模式</h4><div class="mode-seg">'+MODES.map(([k,t,d])=>`<button class="${k===authMode?'on':''}" data-mode="${k}"><b>${t}</b><small>${d}</small></button>`).join('')+'</div>';
+  m.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{authMode=b.dataset.mode;renderAuth()});
+  const nav=document.getElementById('authNav');
+  nav.innerHTML=AUTH_NAV.map(([k,l])=>`<div class="ani ${k===authTab?'on':''}" data-auth="${k}">${l}</div>`).join('');
+  nav.querySelectorAll('[data-auth]').forEach(b=>b.onclick=()=>{authTab=b.dataset.auth;renderAuth()});
+  const body=document.getElementById('authBody');
+  if(authTab==='allowed') body.innerHTML=renderAllowed();
+  else if(authTab==='rules') body.innerHTML=renderRules();
+  else body.innerHTML=renderAdmission();
+  bindAuth();
+}
+function renderAllowed(){
+  let h='<div class="auth-panel"><h4>允许名单（按来源） · 只有名单里的人能发起工作；不同来源的身份不会互相映射。</h4>';
+  Object.entries(ALLOW_DATA).forEach(([src,users])=>{
+    h+=`<div class="proc-group"><h4>${esc(src)}</h4>`+users.map(u=>`<div class="allow-row"><span class="dot done"></span><span class="grow">${esc(u.name)} <span style="color:var(--ink-3)">${esc(u.id)}</span></span><button class="btn" data-rmallow="${esc(src)}:${esc(u.id)}">移除</button></div>`).join('')+'<button class="btn" data-addallow="'+esc(src)+'">+ 添加账号</button></div>';
+  });
+  return h+'</div>';
+}
+function renderRules(){
+  return '<div class="auth-panel"><h4>研判规则（命中才接单）</h4>'+RULES.map((r,i)=>`<div class="rule-row">
+    <div class="rr-head" data-rrule="${i}"><span class="dot ${r.on?'done':''}"></span><b>${esc(r.name)}</b><span class="grow"></span><span class="mini-tag ${r.on?'green':''}">${r.on?'启用':'停用'}</span></div>
+    <div class="rr-body" data-rrbody="${i}" hidden><input value="${esc(r.name)}"><textarea rows="3">${esc(r.inst)}</textarea></div>
+  </div>`).join('')+'<button class="btn" data-newrule>+ 添加规则</button></div>';
+}
+function renderAdmission(){
+  const opts=['ignore','inferred','explicit'];
+  const sel=(v)=>v==='—'?'—':`<select>${opts.map(o=>`<option ${o===v?'selected':''}>${o}</option>`).join('')}</select>`;
+  return '<div class="auth-panel"><h4>准入表（每个接收范围允许哪种强度）</h4><table class="admit-grid"><thead><tr><th>范围</th><th>名单内·未@</th><th>名单外·已@</th><th>名单外·未@</th></tr></thead><tbody>'
+    +ADMISSION_ROWS.map(r=>`<tr><td>${esc(r.name)}</td>${r.cells.map(c=>`<td>${sel(c)}</td>`).join('')}</tr>`).join('')
+    +'</tbody></table></div>';
+}
+function bindAuth(){
+  document.querySelectorAll('#authBody [data-rmallow]').forEach(b=>b.onclick=()=>{document.getElementById('authMsg')?.remove();});
+  document.querySelectorAll('#authBody [data-addallow]').forEach(b=>b.onclick=()=>{});
+  document.querySelectorAll('#authBody [data-rrule]').forEach(b=>b.onclick=()=>{
+    const idx=b.dataset.rrule, body=document.querySelector(`[data-rrbody="${idx}"]`);
+    body.hidden=!body.hidden;
+  });
+  document.querySelectorAll('#authBody [data-newrule]').forEach(b=>b.onclick=()=>{});
+}
+document.querySelectorAll('[data-entry]').forEach(b=>b.onclick=()=>{
+  if(b.dataset.entry==='prompts') openPrompts();
+  else if(b.dataset.entry==='auth') openAuth();
+});
+
+renderPipeline(); renderTodo(); renderTicketStrip(); renderPhaseSwitch(); renderNodes(); renderConfig(); requestAnimationFrame(drawLinks);
+</script>
+</body>
+</html>

@@ -18,7 +18,10 @@ import { ThreadPage } from './thread.tsx'
 import { TicketPage } from './ticket.tsx'
 import { TriggerStatus } from './trigger.tsx'
 import { WorkbenchPage } from './workbench.tsx'
-import { When } from './widgets.tsx'
+import { AutomationCard, ConfigEntries, ConfigPageFrame, SourceDrawers, TodoBoard, TodoProcessPage } from './workbench2.tsx'
+import { SettingsProvider } from './settings-kit.tsx'
+import { Dashboard } from './dashboard.tsx'
+import { Section, When } from './widgets.tsx'
 
 export interface AppProps {
   t: T; openSession: (sessionId: string) => Promise<void>
@@ -99,7 +102,7 @@ function SearchResults({ result, query, onClose }: { result: SearchView; query: 
   </div>
 }
 
-function Header({ masterId }: { masterId: string | undefined }) {
+function Header({ masterId, tempLabel, onCloseTemp }: { masterId: string | undefined; tempLabel?: string; onCloseTemp?: () => void }) {
   const { t, call, openSession, notify } = usePanel()
   const [glossary, setGlossary] = useState(false)
   const [query, setQuery] = useState('')
@@ -125,6 +128,7 @@ function Header({ masterId }: { masterId: string | undefined }) {
   return <header className="dt-head">
     <div className="dt-head-title"><h1 className="dt-title">{t('title')}</h1></div>
     <div className="dt-toolbar">
+      {tempLabel && <button type="button" className="dt-temp-tab" onClick={onCloseTemp}>{tempLabel} <span aria-label={t('close')}>×</span></button>}
       <form ref={search} className="dt-search" role="search" onSubmit={submit} onKeyDown={event => { if (event.key === 'Escape') show() }}>
         <Input type="search" icon={<Icon name="search" />} value={query} placeholder={t('searchPlaceholder')} aria-label={t('searchLabel')}
           onChange={event => { setQuery(event.target.value); if (!event.target.value) show() }} />
@@ -143,7 +147,7 @@ function Pages({ route, openTab, deploymentForm, guideDone, onGuideDone }: {
   route: Route; openTab: (tab: Tab) => void; deploymentForm: DeploymentForm
   guideDone: boolean; onGuideDone: () => void
 }) {
-  const { t, call } = usePanel()
+  const { t, call, navigate } = usePanel()
   const { state, error, reload } = usePanelData()
   // Keep the active tab scrolled into view on narrow screens when routes change via links.
   useEffect(() => { document.getElementById(`dt-tab-${tabOf(route)}`)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }) }, [route])
@@ -162,7 +166,11 @@ function Pages({ route, openTab, deploymentForm, guideDone, onGuideDone }: {
   const page = (() => {
     if (guide) return <SetupGuide onDone={onGuideDone} />
     switch (route.page) {
-      case 'workbench': return <WorkbenchPage />
+      case 'workbench': return <div className="dt-workbench-page"><TodoBoard /><WorkbenchPage />
+        <Section title={t('pipelineTitle')} hint={t('pipelineHint')}><Dashboard /></Section>
+        <ConfigEntries /><SettingsProvider><SourceDrawers /></SettingsProvider><AutomationCard /></div>
+      case 'processing': return <TodoProcessPage kind={route.id} />
+      case 'config': return <ConfigPageFrame page={route.id} />
       case 'home': return <HomePage />
       case 'tickets': return route.id !== undefined ? <TicketPage key={route.id} id={route.id} />
         : state ? <ExecutionStatus filter={route.query?.filter ?? 'open'} state={state} reload={reload} /> : waiting
@@ -175,7 +183,9 @@ function Pages({ route, openTab, deploymentForm, guideDone, onGuideDone }: {
   })()
   return <div className="dt-page">
     <div className="dt-column">
-      <Header masterId={state?.masterId} />
+      <Header masterId={state?.masterId}
+        tempLabel={route.page === 'processing' ? t(`processing.${route.id}`) : route.page === 'config' ? t(`config.${route.id}`) : undefined}
+        onCloseTemp={() => navigate({ page: 'workbench' }, true)} />
       {error && state && <p className="dt-error" role="status">{error.message}</p>}
       {!guide && <SegmentedTabs className="dt-tabs" label={t('pagesLabel')} value={tabOf(route)} onChange={openTab}
         items={TABS.map(value => ({ value, label: t(`tab.${value}`), id: `dt-tab-${value}`, panelId: 'dt-page' }))} />}
@@ -188,8 +198,8 @@ function Pages({ route, openTab, deploymentForm, guideDone, onGuideDone }: {
  * The tab a route belongs to. The advanced views are reached from Home and Settings rather than a tab of their own, so
  * the navigation keeps showing the tab a person came from.
  */
-const tabOf = (route: Route): Tab => route.page === 'workbench' ? 'workbench' : route.page === 'home' ? 'home'
-  : route.page === 'tickets' ? 'tickets' : route.page === 'settings' ? 'settings' : 'home'
+const tabOf = (route: Route): Tab => route.page === 'workbench' || route.page === 'processing' || route.page === 'config' ? 'workbench'
+  : route.page === 'home' ? 'home' : route.page === 'tickets' ? 'tickets' : route.page === 'settings' ? 'settings' : 'home'
 
 /** Root panel component managing route history and shared panel state. */
 export function App({ t, openSession, deploymentForm }: AppProps) {

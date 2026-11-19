@@ -235,9 +235,9 @@ window.__ModuleLoader__.load({ id: "xenra-superagent", factory: (require) => { /
 | `src/client/api.ts` | `caller`、`ApiError`、`usePoll` 与各视图的类型别名 |
 | `src/client/route.ts` | `TABS`、`SETTINGS_GROUPS`、`parseRoute`、`initialLocation`、`remember` |
 | `src/client/home.tsx` | 首页：先是等你处理的事，其次是一句话的运行状态；执行器计数收在折叠区 |
-| `src/client/workbench.tsx` | 工作台：显示共用的项目、写要求与范围、提交后显示本次会话提交过的要求 |
-| `src/client/workbench2.tsx` | 统一工作台：待办入口卡与四类处理页、配置页入口，复用既有控制台与设置编辑器 |
-| `src/client/dashboard.tsx` | 嵌入式看板：可点击五阶段流水线与信号台/研判台/工单台/派工协作/回执台 |
+| `src/client/workbench2.tsx` | 待办四类处理页与高级配置页（提示词/规则）的复用封装 |
+| `src/client/workbench3.tsx` | 按 .prototype 复刻的工作台：待办看板、五阶段流水线、五个嵌入式看板、配置抽屉与自动化开关 |
+| `src/client/workbench3.css` | 工作台复刻样式，从 .prototype 移植并以 .wb3 作用域隔离 |
 | `src/client/update-status.tsx` | 检查更新一节：说明这次安装是本地链接还是 GitHub 安装，显示领先/落后/有未提交改动，并给出下一步该怎么更新 |
 | `src/client/detail-update.tsx` | 插件管理器详情页的检查更新：注册到 `plugins.detail.section`，只在本 bundle 的详情页绘制；用独立的 `PanelProvider` 复用面板的 `UpdateStatus`，保持同一套确认、诊断与样式 |
 | `src/client/setup-wizard.tsx` | 首次配置引导：仓库、账号、可以派活的人、工作目录四步，每步直接写对应的设置块 |

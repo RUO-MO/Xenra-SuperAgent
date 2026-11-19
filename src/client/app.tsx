@@ -17,11 +17,9 @@ import { actorName, errorText, reasonLabel, valueLabel, type T, readableMarkers 
 import { ThreadPage } from './thread.tsx'
 import { TicketPage } from './ticket.tsx'
 import { TriggerStatus } from './trigger.tsx'
-import { WorkbenchPage } from './workbench.tsx'
-import { AutomationCard, ConfigEntries, ConfigPageFrame, SourceDrawers, TodoBoard, TodoProcessPage } from './workbench2.tsx'
-import { SettingsProvider } from './settings-kit.tsx'
-import { Dashboard } from './dashboard.tsx'
-import { Section, When } from './widgets.tsx'
+import { ConfigPageFrame, TodoProcessPage } from './workbench2.tsx'
+import { Workbench3 } from './workbench3.tsx'
+import { When } from './widgets.tsx'
 
 export interface AppProps {
   t: T; openSession: (sessionId: string) => Promise<void>
@@ -166,9 +164,7 @@ function Pages({ route, openTab, deploymentForm, guideDone, onGuideDone }: {
   const page = (() => {
     if (guide) return <SetupGuide onDone={onGuideDone} />
     switch (route.page) {
-      case 'workbench': return <div className="dt-workbench-page"><TodoBoard /><WorkbenchPage />
-        <Section title={t('pipelineTitle')} hint={t('pipelineHint')}><Dashboard /></Section>
-        <ConfigEntries /><SettingsProvider><SourceDrawers /></SettingsProvider><AutomationCard /></div>
+      case 'workbench': return <Workbench3 />
       case 'processing': return <TodoProcessPage kind={route.id} />
       case 'config': return <ConfigPageFrame page={route.id} />
       case 'home': return <HomePage />

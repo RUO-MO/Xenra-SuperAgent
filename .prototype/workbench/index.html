@@ -439,7 +439,7 @@ header.top{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.92);bac
             <div class="ticket-strip-cards" id="ticketStrip"><!-- JS 注入：只读展示 --></div>
           </div>
           <div class="dash">
-            <div class="phase-switch" id="phaseSwitch" title="演示：切换当前工单的执行阶段"><!-- JS 注入：阶段演示 --></div>
+            <div class="phase-switch" id="phaseSwitch" title="切换当前工单的执行阶段"><!-- JS 注入：阶段演示 --></div>
             <div class="lane" id="lane"><svg class="links" id="links" preserveAspectRatio="none" aria-hidden="true"></svg></div>
             <div class="legend">
               <span class="seg"><span class="ln" style="border-color:var(--accent)"></span>方案运行中 → 提交审查</span>
@@ -550,7 +550,7 @@ const BOARD_META = {
   trigger:{title:'信号台', hint:'来源把外部事件翻译成触发，去重后写入线程并扇出'},
   eval:{title:'研判台', hint:'准入判定 + 主 Session 研判候选，决定是否立项'},
   ticket:{title:'工单台', hint:'已立项工作的授权、阶段与订阅'},
-  dispatch:{title:'派工协作', hint:'正在派工仅展示当前工单与下一条；右侧可切换阶段演示执行链路'},
+  dispatch:{title:'派工协作', hint:'正在派工仅展示当前工单与下一条；下方展示当前工单的执行链路'},
   reply:{title:'回执台', hint:'确认、回答、结果与提问通过渠道回给发起人'},
 };
 let currentBoard='dispatch';
@@ -856,7 +856,7 @@ function renderTicketStrip(){
 function renderPhaseSwitch(){
   const box=document.getElementById('phaseSwitch');
   if(!box) return;
-  box.innerHTML=`<span class="phase-label">阶段演示 ▸</span>`+SCENES.map((s,i)=>
+  box.innerHTML=`<span class="phase-label">执行阶段 ▸</span>`+SCENES.map((s,i)=>
     `<button class="phase-btn ${i===scene?'on':''}" data-scene="${i}">${esc(s.label.replace(/^\d+ /,''))}</button>`).join('');
   box.querySelectorAll('.phase-btn').forEach(b=>b.onclick=()=>{
     scene=+b.dataset.scene; renderPhaseSwitch(); renderNodes(); requestAnimationFrame(drawLinks);

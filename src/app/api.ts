@@ -1,5 +1,7 @@
 /** Type-only management API contract between the web panel and host routes, imported by the panel without bundling host code. */
 import type { ModelCatalog } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { ModelSelection } from '@deepseek-ai/dsh-agent'
+import type { RoleModel } from '../policy.ts'
 import type { PromptConfig, Prompts } from './prompts.ts'
 import type { PromptsView, StateView, TicketPageView } from './http.ts'
 import type { HistoryView } from './settings-history.ts'
@@ -7,6 +9,7 @@ import type { OverviewView } from './views/overview.ts'
 import type { LifecycleListView } from './views/lifecycle.ts'
 import type { SettingsView } from './views/settings.ts'
 import type { SourceStatusView } from './views/sources.ts'
+import type { GateView } from './views/gates.ts'
 import type { DecisionListView, SearchView, ThreadDetailView, ThreadListView } from './views/threads.ts'
 import type { TicketListView } from './views/tickets.ts'
 import type { Target, TargetKind } from '../workspace/targets.ts'
@@ -27,7 +30,19 @@ export interface Api {
   'GET lifecycle': { response: LifecycleListView }
   'GET search': { query: { q: string }; response: SearchView }
   'GET sources': { response: SourceStatusView[] }
+  /** Real queues of the two manual gates: Triggers waiting for review, and accepts waiting for ticket approval. */
+  'GET gates': { response: GateView }
+  /** Approve or drop Triggers held at the review gate, in one batch; dropping spends no assessment tokens. */
+  'POST gates/review': { body: { action: 'approve' | 'drop'; triggerIds: string[] }; response: { changed: number; failed: string[] } }
+  /** Approve (create tickets) or reject accepts held at the ticket gate, in one batch. */
+  'POST gates/ticket': { body: { action: 'approve' | 'reject'; decisionIds: string[] }; response: { changed: number; failed: string[] } }
   'GET settings': { response: SettingsView }
+  /** The configured assessment model and the route the main Session will use next. */
+  'GET master/model': { response: { sessionId: string; configured: RoleModel | null; current?: ModelSelection; archived: boolean } }
+  /** Re-select the configured assessment model on the running main Session. */
+  'POST master/model': { response: { applied: true; current: ModelSelection } }
+  /** Restore the main Session from DSH's archive set, which otherwise blocks every model step. */
+  'POST master/restore': { response: { restored: boolean; archived: boolean; current?: ModelSelection } }
   'POST sources/:id/labels': { response: { added: string[] } }
   'GET threads': { query?: Paged & { filter?: ThreadFilter }; response: ThreadListView }
   'GET threads/:key': { query?: { limit?: number; before?: string; around?: string }; response: ThreadDetailView }

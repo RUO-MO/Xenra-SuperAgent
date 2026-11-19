@@ -70,6 +70,19 @@ export function storeReads(db: DatabaseSync) {
   failingReplies: (): (Receipt & { attempts: number; error: string })[] => db.prepare(`SELECT o.value, e.attempts, e.error FROM effect e
     JOIN outbox o ON o.id = e.key WHERE e.kind = 'reply' AND e.attempts > 0 ORDER BY e.seq`).all()
     .map(row => ({ ...JSON.parse(String(row.value)) as Receipt, attempts: Number(row.attempts), error: String(row.error) })),
+  /** Outbox counts by delivery status: sent (all time), pending now, and dropped since `since`. */
+  outboxStats: (since: string): { sent: number; pending: number; dropped: number } => {
+    const rows = db.prepare("SELECT value ->> '$.status' AS status, COUNT(*) AS n FROM outbox GROUP BY status").all()
+    const counts = { sent: 0, pending: 0, dropped: 0 }
+    for (const row of rows) {
+      const status = String(row.status)
+      if (status === 'sent' || status === 'pending') counts[status] = Number(row.n ?? 0)
+    }
+    counts.dropped = Number(db.prepare("SELECT COUNT(*) AS n FROM outbox WHERE value ->> '$.status' = 'dropped' AND value ->> '$.dropped.at' >= ?").get(since)?.n ?? 0)
+    return counts
+  },
+  /** The latest outbox receipts, newest first, for the workbench's reply ledger. */
+  recentReplies: (limit = 12): Receipt[] => values('SELECT value FROM outbox ORDER BY rowid DESC LIMIT ?', limit),
   droppedReplies: (limit = 20): Dropped[] =>
     values('SELECT value FROM outbox WHERE dropped IS NOT NULL ORDER BY dropped DESC LIMIT ?', limit),
   droppedSince: (since: string): number => Number(db.prepare('SELECT COUNT(*) AS n FROM outbox WHERE dropped >= ?').get(since)?.n ?? 0),

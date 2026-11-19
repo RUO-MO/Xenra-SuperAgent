@@ -122,6 +122,14 @@ interface Trigger {
 interface TriggerDisposition {
   /** Rejected by the source scope filter before entering the domain, for the Source's reason. */
   filtered?: Reason;
+  /**
+   * Held before Eval until a person lets it in (`pending`), so garbage never costs assessment tokens.
+   * A manual drop leaves this cleared and records `filtered` with `manualDrop`.
+   */
+  review?: {
+    state: 'pending';
+    at: string;
+  };
   evalId?: string;
   decisionId?: string;
   /**
@@ -294,6 +302,23 @@ interface ThreadFact {
 /** A thread's facts by id, ordered for display; each writer owns its fact ids. */
 type ThreadFacts = Record<string, ThreadFact>;
 type DecisionKind = 'ignore' | 'accept' | 'reopen' | 'stop' | 'unavailable';
+/** An accept held before Ticket creation: the exact outcome a person approves or rejects at the second gate. */
+interface TicketProposal {
+  state: 'pending' | 'approved' | 'rejected';
+  title: string;
+  scope: string;
+  acknowledgement?: string;
+  rules?: string[];
+  name?: string;
+  note?: string;
+  /** The Eval's normalized reasons, kept for the ticket's acknowledgement and audit. */
+  reason: Reason[];
+  triggerIds: string[];
+  primary?: string;
+  audit?: Record<string, unknown>;
+  at: string;
+  decidedAt?: string;
+}
 /** Outcome of one eval, recorded on the thread. */
 interface Decision {
   id: string;
@@ -308,6 +333,8 @@ interface Decision {
   strength: Strength;
   ticketId?: string;
   mandate?: Mandate;
+  /** An accept held at the ticket gate until a person approves (creates the ticket) or rejects it. */
+  proposal?: TicketProposal;
   /** Assessor-supplied audit data (rule assessments, direction, evidence). */
   audit?: Record<string, unknown>;
   /** A person dismissed the problem an unavailable Decision shows. */
@@ -537,6 +564,10 @@ interface SourceScope {
 interface Policy {
   version: string;
   paused: boolean;
+  /** Whether admitted Triggers stop at the review gate instead of queueing for Eval immediately. */
+  reviewGate?: boolean;
+  /** Whether an accept stops at the ticket gate and waits for a person instead of creating its Ticket immediately. */
+  ticketGate?: boolean;
   gate(trigger: Trigger, thread: Thread, tickets: Ticket[]): GateResult;
   /** Re-check a mandate's gate-layer basis under this policy, such as before an ended ticket resumes. */
   revalidate(mandate: Mandate): boolean;
@@ -627,6 +658,13 @@ interface DomainEvents {
     triggerId: string;
     threads: string[];
   };
+  /** An admitted Trigger stopped at the review gate, was let into Eval, or was dropped there without an Eval. */
+  'trigger.reviewApproved': {
+    triggerId: string;
+  };
+  'trigger.dropped': {
+    triggerId: string;
+  };
   'eval.started': {
     evalId: string;
     threadKey: string;
@@ -637,6 +675,18 @@ interface DomainEvents {
     decisionId: string;
     kind: DecisionKind;
     threadKey: string;
+  };
+  /** An accept held at the ticket gate, then approved into a Ticket or rejected. */
+  'decision.proposed': {
+    decisionId: string;
+    threadKey: string;
+  };
+  'decision.approved': {
+    decisionId: string;
+    ticketId: string;
+  };
+  'decision.rejected': {
+    decisionId: string;
   };
   'ticket.created': {
     ticketId: string;
@@ -695,6 +745,8 @@ interface Repositories {
   atomic<T>(work: () => T): T;
   triggers: {
     get(id: string): Trigger | undefined;
+    /** Recent Triggers newest first, for gate queues; optional for narrow test repositories. */
+    list?(limit?: number): Trigger[];
     save(trigger: Trigger): void;
     disposition(id: string): TriggerDisposition | undefined;
     saveDisposition(id: string, value: TriggerDisposition): void;
@@ -718,10 +770,12 @@ interface Repositories {
     get(id: string): Decision | undefined;
     save(decision: Decision): void;
     byThread(key: string): Decision[];
+    /** Accepts waiting at the ticket gate; optional for narrow test repositories. */
+    proposals?(): Decision[];
   };
 }
 //#endregion
 //#region src/core/intake.d.ts
 type ReceiveResult = 'stored' | 'duplicate' | 'filtered';
 //#endregion
-export { settled as $, MandateBasis as A, TicketEndBy as B, Decision as C, Follow as D, Execution as E, Thread as F, followupOwners as G, TicketOutcome as H, ThreadFact as I, latestReport as J, isoTime as K, ThreadFacts as L, ReportState as M, Strength as N, FollowupRecords as O, Text as P, runningAssignment as Q, ThreadRef as R, ChannelRef as S, Evaluation as T, Trigger as U, TicketInput as V, TriggerDisposition as W, reached as X, liveTicket as Y, readUntil as Z, ActorRef as _, DomainEvent as a, ReasonCode as at, AssignmentState as b, GateResult as c, Config as ct, Policy as d, threadKey as et, ReplyStatus as f, AcceptMode as g, SourceScope as h, Candidate as i, Reason as it, PolicyEffect as j, Mandate as k, OutboundMessage as l, Deployment as lt, ScopeResult as m, AssessmentOutcome as n, waitsForPerson as nt, DomainEvents as o, reasonText as ot, Repositories as p, latestAssignment as q, Assessor as r, REASONS as rt, Executor as s, said as st, ReceiveResult as t, ticketOutcome as tt, Outbox as u, DeploymentConfig as ut, AdmissionCell as v, DecisionKind as w, Attention as x, Assignment as y, Ticket as z };
+export { runningAssignment as $, MandateBasis as A, TicketEndBy as B, Decision as C, Follow as D, Execution as E, Thread as F, TriggerDisposition as G, TicketOutcome as H, ThreadFact as I, latestAssignment as J, followupOwners as K, ThreadFacts as L, ReportState as M, Strength as N, FollowupRecords as O, Text as P, readUntil as Q, ThreadRef as R, ChannelRef as S, Evaluation as T, TicketProposal as U, TicketInput as V, Trigger as W, liveTicket as X, latestReport as Y, reached as Z, ActorRef as _, DomainEvent as a, Reason as at, AssignmentState as b, GateResult as c, said as ct, Policy as d, DeploymentConfig as dt, settled as et, ReplyStatus as f, AcceptMode as g, SourceScope as h, Candidate as i, REASONS as it, PolicyEffect as j, Mandate as k, OutboundMessage as l, Config as lt, ScopeResult as m, AssessmentOutcome as n, ticketOutcome as nt, DomainEvents as o, ReasonCode as ot, Repositories as p, isoTime as q, Assessor as r, waitsForPerson as rt, Executor as s, reasonText as st, ReceiveResult as t, threadKey as tt, Outbox as u, Deployment as ut, AdmissionCell as v, DecisionKind as w, Attention as x, Assignment as y, Ticket as z };

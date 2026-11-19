@@ -11,6 +11,17 @@ export async function resolveRoleModel(ctx: Context, model: RoleModel): Promise<
   return { provider: value.provider, model: value.model, ...(value.reasoningEffort ? { reasoningEffort: value.reasoningEffort } : {}) }
 }
 
+/**
+ * Resolve and switch a role's configured model on a Session that already exists.
+ * Appends a durable `model/selection`, which the next model step reads; DSH adds its own switch notice.
+ */
+export async function applyRoleModel(ctx: Context, agent: Agent, model: RoleModel): Promise<ModelSelection> {
+  const selected = await resolveRoleModel(ctx, model)
+  agent.model.select(selected)
+  await ctx.sessionPersistence.flush()
+  return selected
+}
+
 /** Seed a role's configured model onto a brand-new session before its first request, leaving later manual or durable selections intact. */
 export async function initializeRoleModel(ctx: Context, agent: Agent, model: RoleModel | null): Promise<void> {
   if (!model) return

@@ -33,6 +33,7 @@ import { overview } from './views/overview.ts'
 import { lifecycleList } from './views/lifecycle.ts'
 import { settingsView } from './views/settings.ts'
 import { sourcesStatus, type SetupState } from './views/sources.ts'
+import { gatesView } from './views/gates.ts'
 import { decisionList, search, threadDetail, threadList } from './views/threads.ts'
 import { executorLoad, ticketDetail, ticketList } from './views/tickets.ts'
 
@@ -42,14 +43,16 @@ export interface HttpHost {
   readonly sourceLinks: Pick<TextCache, 'entries'>
   readonly sources: SourceRegistry
   readonly prompts: Pick<Prompts, 'current' | 'version' | 'history' | 'preview' | 'save' | 'defaultChanged'>
-  readonly sessions: Pick<Sessions, 'status' | 'notify' | 'delivery'>
+  readonly sessions: Pick<Sessions, 'status' | 'notify' | 'delivery' | 'modelFailure' | 'modelOf' | 'reconfigureModel' | 'archived' | 'restore'>
   readonly settings: Pick<Settings, 'view' | 'save' | 'pause' | 'sync' | 'refreshLabels'>
   /** Engine operations the panel may trigger. `receive` lets the workbench console submit a request as a Trigger. */
-  readonly engine: EngineForPeople & Pick<Engine, 'receive'>
+  readonly engine: EngineForPeople & Pick<Engine, 'receive' | 'approveReview' | 'dropReview' | 'approveProposal' | 'rejectProposal'>
   readonly executor: Pick<DshExecutor, 'activeCount'>
   readonly health: Record<string, Health>
   readonly machine: Machine
   readonly masterId: string
+  /** The separate DSH Session that owns the proposal gate. */
+  readonly proposalId: string
   /** Resolves once startup finishes or setup determines what is still missing. */
   readonly ready: Promise<void>
   /** Resolved deployment; throws if read while waiting for setup (`!configured()`). */
@@ -121,7 +124,7 @@ export function stateView(runtime: HttpHost) {
   const settings = runtime.store.settings()
   return { setup: setupView(runtime), load: { ...executorLoad(runtime.store, runtime.executor.activeCount()),
     maxWorkers: settings.executor.maxWorkers },
-    masterId: runtime.masterId, paused: settings.paused, health: runtime.health }
+    masterId: runtime.masterId, proposalId: runtime.proposalId, paused: settings.paused, health: runtime.health }
 }
 const views = (runtime: HttpHost): ViewHost => ({ store: runtime.store, sources: runtime.sources, links: runtime.links() })
 const setupState = (runtime: HttpHost): SetupState => ({ deployment: runtime.configured() ? runtime.deployment : undefined,
@@ -191,12 +194,29 @@ function routes(runtime: HttpHost): Routes {
   return {
     'GET state': () => stateView(runtime),
     'GET overview': () => overview(views(runtime), runtime.health, policyVersion(store.settings()),
-      executorLoad(store, runtime.executor.activeCount()), runtime.setupProblem ?? runtime.feishuProblem),
+      executorLoad(store, runtime.executor.activeCount()), runtime.setupProblem ?? runtime.feishuProblem, runtime.sessions.modelFailure()),
     // Recent requests as lifecycle trees for the workbench's flow view.
     'GET lifecycle': () => lifecycleList(views(runtime)),
     'GET search': ({ query }) => search(views(runtime), query.q ?? '', runtime.sourceLinks),
     'GET sources': () => sourcesStatus(views(runtime), runtime.health, setupState(runtime)),
     'GET settings': () => settingsView(store, runtime.sources, runtime.health, setupState(runtime), runtime.machine.stateDir),
+    // The model the main Session will use next, and the role model configured for it: the panel shows both so a saved
+    // setting that never reached the running Session is visible instead of silently ignored.
+    'GET master/model': () => ({ sessionId: runtime.masterId, configured: store.settings().eval.model,
+      current: runtime.sessions.modelOf(), archived: runtime.sessions.archived() }),
+    'POST master/model': async () => {
+      const model = store.settings().eval.model
+      if (!model) throw new RouteError(400, 'No assessment model is configured')
+      return { applied: true, current: await runtime.sessions.reconfigureModel(model) }
+    },
+    // DSH refuses every model step of an archived Session; restoring it is the panel's recovery path for a main Session
+    // that someone archived from the Session list.
+    'POST master/restore': async () => {
+      const restored = await runtime.sessions.restore()
+      const model = store.settings().eval.model
+      if (model) await runtime.sessions.reconfigureModel(model)
+      return { restored, archived: runtime.sessions.archived(), current: runtime.sessions.modelOf() }
+    },
     'POST sources/:id/labels': ({ params }) => runtime.settings.refreshLabels(params.id),
     'GET threads': ({ query }) => {
       const { filter, offset, limit } = ThreadsQuery.parse(query)
@@ -216,6 +236,36 @@ function routes(runtime: HttpHost): Routes {
       const queued = runtime.engine.reevaluate(params.id)
       runtime.requestPass()
       return { queued }
+    },
+    'GET gates': () => gatesView(runtime.store),
+    // Manual gate actions are deliberate human decisions: each item is tried independently so one stale row does not block a batch.
+    'POST gates/review': async ({ body }) => {
+      const request = z.object({ action: z.enum(['approve', 'drop']), triggerIds: z.array(z.string()).min(1).max(200) }).parse(await body())
+      let changed = 0
+      const failed: string[] = []
+      for (const id of request.triggerIds) {
+        try {
+          if (request.action === 'approve') runtime.engine.approveReview(id)
+          else runtime.engine.dropReview(id)
+          changed++
+        } catch { failed.push(id) }
+      }
+      if (request.action === 'approve' && changed) runtime.requestPass()
+      return { changed, failed }
+    },
+    'POST gates/ticket': async ({ body }) => {
+      const request = z.object({ action: z.enum(['approve', 'reject']), decisionIds: z.array(z.string()).min(1).max(200) }).parse(await body())
+      let changed = 0
+      const failed: string[] = []
+      for (const id of request.decisionIds) {
+        try {
+          if (request.action === 'approve') runtime.engine.approveProposal(id)
+          else runtime.engine.rejectProposal(id)
+          changed++
+        } catch { failed.push(id) }
+      }
+      if (changed) runtime.requestPass()
+      return { changed, failed }
     },
     'GET decisions': ({ query }) => {
       const { kind, window, offset, limit } = DecisionsQuery.parse(query)

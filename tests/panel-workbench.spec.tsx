@@ -27,6 +27,13 @@ it('opens the processing page when a todo card is clicked', async () => {
   expect(text()).toContain(zh['processing.answer'])
 })
 
+it('names the reason a system problem carries instead of showing only its kind', async () => {
+  await mount()
+  await click(tab(zh['tab.workbench']))
+  await click(all('.todo-card')[3]!)
+  expect(text()).toContain('研判失败（超时）')
+})
+
 it('shows a clickable five-stage pipeline and switches the embedded board', async () => {
   await mount()
   await click(tab(zh['tab.workbench']))
@@ -36,6 +43,8 @@ it('shows a clickable five-stage pipeline and switches the embedded board', asyn
     '触达', '评审', '立项工单', '派工', '回复',
   ])
   expect(document.querySelector('.embed-title')?.textContent).toBe('派工协作')
+  // The Eval stage states the real failure it read, not the prototype's fixed "进行中".
+  expect(stages[1]!.querySelector('.stage-state')?.textContent).toContain('研判失败')
   await click(stages[0]!)
   expect(document.querySelector('.embed-title')?.textContent).toBe('信号台')
   await click(all('.stage-card')[4]!)
@@ -55,18 +64,15 @@ it('submits a request from the small compose card and clears it', async () => {
   expect(text()).toContain('已进入触达排队')
 })
 
-it('renders the dispatch lane with the four nodes, subagents and phase switch', async () => {
+it('renders the real dispatch lane from the ticket assignments, without the prototype demo phases', async () => {
   await mount()
   await click(tab(zh['tab.workbench']))
-  // Dispatch is the default board.
-  expect(all('.node').map(node => node.querySelector('.n-name')?.textContent)).toEqual([
-    '主窗口 · 方案', '审查窗口', '执行窗口 · 开工', '主窗口 · 回复',
-  ])
-  expect(all('.subagents').length).toBeGreaterThan(0)
-  const phases = all('.phase-btn')
-  expect(phases.length).toBe(4)
-  await click(phases[1]!)
-  expect(phases[1]!.classList.contains('on')).toBe(true)
+  // Dispatch is the default board; its nodes come from the open ticket's assignments, not from demo scenes.
+  expect(all('.assign-node')).toHaveLength(1)
+  expect(all('.assign-node .assign-name').map(node => node.textContent)).toEqual(['派工 a1'])
+  expect(text()).toContain('执行链路')
+  expect(all('.phase-btn')).toHaveLength(0)
+  expect(all('.subagents')).toHaveLength(0)
 })
 
 it('shows the config drawers and automation switches', async () => {

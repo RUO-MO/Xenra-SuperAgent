@@ -4,7 +4,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { agentEvents, type Agent, type ModelSelection } from '@deepseek-ai/dsh-agent'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
-import { initializeRoleModel } from '../src/app/role-models.ts'
+import { applyRoleModel, initializeRoleModel } from '../src/app/role-models.ts'
 const contexts: Context[] = []
 afterEach(async () => { await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose())); vi.restoreAllMocks() })
 async function fixture() {
@@ -35,6 +35,23 @@ it('keeps prompt variables and initial routing on the role model without saving 
   expect(await request()).toEqual(selected)
   await ctx.systemPrompt.assemble()
   expect(await request()).toEqual(selected)
+})
+it('switches a Session that already ran onto the configured model, recording a durable selection', async () => {
+  const { ctx, agent, resolve, flush } = await fixture()
+  const recorded: ModelSelection[] = []
+  const select = vi.fn((selection: ModelSelection) => {
+    recorded.push(selection)
+    const event = agent.session.append('model/selection', selection)
+    ctx.emit('session/event', agent.session, event)
+  })
+  Object.assign(agent, { model: { select, current: () => recorded.at(-1) } })
+  const selected = await applyRoleModel(ctx, agent, { provider: 'worker-provider', model: 'worker-model' })
+  expect(selected).toEqual({ provider: 'worker-provider', model: 'worker-model' })
+  expect(select).toHaveBeenCalledOnce()
+  expect(flush).toHaveBeenCalledOnce()
+  // The switch is durable, unlike a setting that only seeds a brand-new Session.
+  expect(agent.session.snapshotEvents().filter(event => event.type === 'model/selection')).toHaveLength(1)
+  expect(resolve).toHaveBeenCalledOnce()
 })
 it('lets a later explicit selection win without changing the in-flight assembled step', async () => {
   const { ctx, agent, host, request } = await fixture()

@@ -63,8 +63,8 @@ export interface SettingsHost {
   /** DSH Cordis context used to validate and resolve role models. */
   readonly context: Context
   readonly lifetime: AbortSignal
-  /** Session manager through which the main Session is notified of saved settings. */
-  readonly sessions: Pick<Sessions, 'notify' | 'delivery'>
+  /** Session manager through which the main Session is notified of saved settings and receives a changed role model. */
+  readonly sessions: Pick<Sessions, 'notify' | 'delivery' | 'reconfigureModel'>
   /** Source host passed to source kinds' policy syncs and label refreshes. */
   readonly sourceHost: SourceHost
   /** Setup state, account/command checks, and restart trigger when setup-read fields change. */
@@ -188,6 +188,12 @@ export class Settings {
     const blocked = settings.executor.blockedCommands
     const changed = blocked.join(' ') !== old.executor.blockedCommands.join(' ')
     if (changed) await this.host.setup.blockCommands(blocked)
+    // A saved assessment model applies to the Session already running too; otherwise the panel setting only reaches the
+    // next Session created, which never happens while the main Session is alive.
+    if (block === 'eval' && model && JSON.stringify(model) !== JSON.stringify(previous)) {
+      try { await this.host.sessions.reconfigureModel(model) }
+      catch (error) { this.host.context.logger.warn('xenra-superagent could not apply the saved model to the main Session: %s', String(error)) }
+    }
     // When restarting, the notice stays pending until after the restart; `setup.restart()` defers until this call returns.
     const delivery = restarting ? 'pending' : await sessions.delivery(`settings:${block}`)
     if (restarting) this.host.setup.restart()

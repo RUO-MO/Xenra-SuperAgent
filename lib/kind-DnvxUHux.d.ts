@@ -1,4 +1,4 @@
-import { F as Thread, I as ThreadFact, R as ThreadRef, S as ChannelRef, U as Trigger, h as SourceScope, l as OutboundMessage, lt as Deployment, m as ScopeResult, t as ReceiveResult, v as AdmissionCell, z as Ticket } from "./intake-JdfR0r-C.js";
+import { F as Thread, I as ThreadFact, R as ThreadRef, S as ChannelRef, W as Trigger, h as SourceScope, l as OutboundMessage, m as ScopeResult, t as ReceiveResult, ut as Deployment, v as AdmissionCell, z as Ticket } from "./intake-Bs3duRld.js";
 import { Context } from "@deepseek-ai/cordis";
 import { DatabaseSync } from "node:sqlite";
 import { MessageId } from "@deepseek-ai/dsh-llm";
@@ -2256,6 +2256,8 @@ declare const SettingsSchema: ZodObject<{
       model: ZodString;
       reasoningEffort: ZodOptional<ZodString>;
     }, $strict>>>;
+    autoReview: ZodDefault<ZodBoolean>;
+    autoTicket: ZodDefault<ZodBoolean>;
   }, $strict>>;
   executor: ZodDefault<ZodObject<{
     model: ZodDefault<ZodNullable<ZodObject<{
@@ -2337,6 +2339,8 @@ declare class SourceRegistry implements SourceScope {
         model: string;
         reasoningEffort?: string | undefined;
       } | null;
+      autoReview: boolean;
+      autoTicket: boolean;
     };
     executor: {
       model: {
@@ -2397,6 +2401,8 @@ declare class SourceRegistry implements SourceScope {
         model: string;
         reasoningEffort?: string | undefined;
       } | null;
+      autoReview: boolean;
+      autoTicket: boolean;
     };
     executor: {
       model: {
@@ -2469,6 +2475,8 @@ declare class SourceRegistry implements SourceScope {
         model: string;
         reasoningEffort?: string | undefined;
       } | null;
+      autoReview: boolean;
+      autoTicket: boolean;
     };
     executor: {
       model: {
@@ -2536,6 +2544,8 @@ declare class SourceRegistry implements SourceScope {
         model: string;
         reasoningEffort?: string | undefined;
       } | null;
+      autoReview: boolean;
+      autoTicket: boolean;
     };
     executor: {
       model: {
@@ -2599,6 +2609,8 @@ declare class SourceRegistry implements SourceScope {
         model: string;
         reasoningEffort?: string | undefined;
       } | null;
+      autoReview: boolean;
+      autoTicket: boolean;
     };
     executor: {
       model: {
@@ -2675,6 +2687,8 @@ declare class SourceRegistry implements SourceScope {
         model: string;
         reasoningEffort?: string | undefined;
       } | null;
+      autoReview: boolean;
+      autoTicket: boolean;
     };
     executor: {
       model: {
@@ -2736,6 +2750,8 @@ declare class SourceRegistry implements SourceScope {
         model: string;
         reasoningEffort?: string | undefined;
       } | null;
+      autoReview: boolean;
+      autoTicket: boolean;
     };
     executor: {
       model: {

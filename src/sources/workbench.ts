@@ -104,5 +104,11 @@ export const workbenchKind: SourceKind<WorkbenchConfig> = {
 export const name = 'xenra-superagent-workbench'
 export const inject = ['orchestrator']
 export function apply(ctx: Context): void {
-  ctx.effect(() => ctx.orchestrator.sources.register(workbenchKind), 'workbench: source kind')
+  ctx.effect(() => {
+    const unregister = ctx.orchestrator.sources.register(workbenchKind)
+    // A console channel has no remote connection to establish: once registered it is ready, not perpetually `starting`.
+    ctx.orchestrator.sources.healthEntries(workbenchKind.health).get(SOURCE)?.set({ state: 'ready',
+      detail: 'Ready for requests', at: new Date().toISOString() })
+    return unregister
+  }, 'workbench: source kind')
 }

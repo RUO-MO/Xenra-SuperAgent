@@ -9,6 +9,7 @@ import type { ApiResponse, DecisionRow, SourceStatusRow, SourceView } from './ap
 import { usePoll } from './api.ts'
 import { Button, Icon, Tag } from './controls.tsx'
 import { usePanel } from './provider.tsx'
+import type { TodoKind } from './route.ts'
 import { SessionButton } from './widgets.tsx'
 
 type Overview = ApiResponse<'GET overview'>
@@ -24,16 +25,17 @@ const BOARD_META: Record<StageKey, { title: string; hint: string }> = {
   trigger: { title: '信号台', hint: '来源把外部事件翻译成触发，去重后写入线程并扇出' },
   eval: { title: '研判台', hint: '准入判定 + 主 Session 研判候选，决定是否立项' },
   ticket: { title: '工单台', hint: '已立项工作的授权、阶段与订阅' },
-  dispatch: { title: '派工协作', hint: '正在派工仅展示当前工单与下一条；阶段演示展示执行链路' },
+  dispatch: { title: '派工协作', hint: '正在派工展示当前工单与下一条；下方展示当前工单的执行链路' },
   reply: { title: '回执台', hint: '确认、回答、结果与提问通过渠道回给发起人' },
 }
 const Dot = ({ state }: { state?: string }) => <span className={`dot ${state ?? ''}`} />
 
 /** The whole workbench, laid out exactly like the prototype. */
 export function Workbench3() {
-  const { call, notify } = usePanel()
+  const { call, notify, navigate } = usePanel()
   const { data: overview } = usePoll(() => call('GET overview'), [])
   const { data: sources } = usePoll(() => call('GET sources'), [])
+  const { data: targets } = usePoll(() => call('GET targets'), [])
   const { data: tickets } = usePoll(() => call('GET tickets', { query: { state: 'open' } }), [])
   const { data: decisions } = usePoll(() => call('GET decisions', { query: { limit: 50 } }), [])
   const person = overview?.person ?? []
@@ -62,7 +64,8 @@ export function Workbench3() {
       <div className="todo-layout">
         <div className="todo-cards">
           {([['answer','待回答','❓','t-answer'],['review','待验收','✓','t-review'],['blocked','受阻/失败','⚠','t-blocked'],['system','系统问题','⚙','t-system']] as const).map(([key,label,icon,cls]) =>
-            <button type="button" key={key} className={`todo-card ${cls}`}>
+            <button type="button" key={key} className={`todo-card ${cls}`}
+              onClick={() => navigate({ page: 'processing', id: key as TodoKind })}>
               <span className="tc-icon" aria-hidden="true">{icon}</span>
               <span className="tc-main"><span className="tc-label">{label}</span><span className="tc-num">{counts[key]}</span></span>
               <Icon name="chevron-right" size={18} />
@@ -73,7 +76,8 @@ export function Workbench3() {
           <textarea aria-label="要求内容" value={text} onChange={e => setText(e.target.value)} placeholder="写一句话，描述要做什么…" />
           <div className="mini-compose-fields">
             <label>目标 <select value={target} onChange={e => setTarget(e.target.value)}>
-              <option value="">默认目标</option>{(sources ?? []).map(s => <option key={s.id} value={s.id}>{s.title.zh ?? s.title.en}</option>)}
+              <option value="">默认目标</option>{(targets?.items ?? []).map(item =>
+                <option key={item.id} value={item.id}>{item.name || (item.kind === 'repository' ? item.repository : item.root)}</option>)}
             </select></label>
             <label>范围 <input value={scope} onChange={e => setScope(e.target.value)} placeholder="可选改动边界" /></label>
             <label>发起人 <input value={actor} onChange={e => setActor(e.target.value)} /></label>
@@ -217,7 +221,7 @@ function DispatchBoard({ tickets }: { tickets?: ApiResponse<'GET tickets'> }) {
       </div>
     </div>
     <div className="dash">
-      <div className="phase-switch"><span>阶段演示 ▸</span>{SCENES.map((s, i) =>
+      <div className="phase-switch"><span>执行阶段 ▸</span>{SCENES.map((s, i) =>
         <button type="button" key={s.label} className={`phase-btn ${i === phase ? 'on' : ''}`} onClick={() => setPhase(i)}>{s.label}</button>)}</div>
       <div className="lane" ref={lane}>
         <svg className="links" viewBox={`0 0 ${lane.current?.clientWidth ?? 1000} ${lane.current?.clientHeight ?? 220}`} preserveAspectRatio="none" aria-hidden="true">

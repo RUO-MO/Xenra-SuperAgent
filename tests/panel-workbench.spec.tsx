@@ -19,6 +19,14 @@ it('shows four todo entry cards above the workbench', async () => {
   for (const card of cards) expect(card.querySelector('.tc-num')?.textContent).toMatch(/^\d+$/)
 })
 
+it('opens the processing page when a todo card is clicked', async () => {
+  await mount()
+  await click(tab(zh['tab.workbench']))
+  await click(all('.todo-card')[0]!)
+  expect(text()).toContain(zh.todoBack)
+  expect(text()).toContain(zh['processing.answer'])
+})
+
 it('shows a clickable five-stage pipeline and switches the embedded board', async () => {
   await mount()
   await click(tab(zh['tab.workbench']))

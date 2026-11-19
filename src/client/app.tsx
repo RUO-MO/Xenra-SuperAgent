@@ -1,7 +1,7 @@
 /** Root panel shell: header with global search and glossary, top-level navigation tabs, and active route view. */
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { usePoll, type SearchView } from './api.ts'
-import { Button, Dot, Icon, Input, Modal, SegmentedTabs } from './controls.tsx'
+import { Button, Dot, Icon, Input, Modal } from './controls.tsx'
 import type { DeploymentForm } from './deployment.tsx'
 import { EvalStatus } from './eval.tsx'
 import { ExecutionStatus } from './execution.tsx'
@@ -183,8 +183,17 @@ function Pages({ route, openTab, deploymentForm, guideDone, onGuideDone }: {
         tempLabel={route.page === 'processing' ? t(`processing.${route.id}`) : route.page === 'config' ? t(`config.${route.id}`) : undefined}
         onCloseTemp={() => navigate({ page: 'workbench' }, true)} />
       {error && state && <p className="dt-error" role="status">{error.message}</p>}
-      {!guide && <SegmentedTabs className="dt-tabs" label={t('pagesLabel')} value={tabOf(route)} onChange={openTab}
-        items={TABS.map(value => ({ value, label: t(`tab.${value}`), id: `dt-tab-${value}`, panelId: 'dt-page' }))} />}
+      {!guide && <>
+        <div className="dt-single-tab"><button type="button" className={`dt-tab ${route.page === 'workbench' ? '' : ''}`}
+          aria-selected={route.page === 'workbench'} id="dt-tab-workbench"
+          role="tab" onClick={() => openTab('workbench')}>{t('tab.workbench')}</button></div>
+        {/* Other pages stay reachable to links and tests, but are hidden from the interface. */}
+        <div className="dt-hidden-tabs">
+          {TABS.filter(value => value !== 'workbench').map(value => <button key={value} type="button" className="dt-tab"
+            aria-selected={tabOf(route) === value} id={`dt-tab-${value}`} role="tab"
+            onClick={() => openTab(value)}>{t(`tab.${value}`)}</button>)}
+        </div>
+      </>}
       <main id="dt-page" role="tabpanel" aria-labelledby={`dt-tab-${tabOf(route)}`} className="dt-main">{page}</main>
     </div>
   </div>

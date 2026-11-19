@@ -308,6 +308,8 @@ div.dt-preview-head { color: var(--dsw-alias-label-secondary); }
   .dt-tab, .dt-segment, .dt-switch-thumb, .dt-spinner g, .dt-btn-busy .dt-btn-icon svg, .dt-tooltip { transition: none; animation: none; }
   .dt-toast { animation: dt-toast-fade 1000ms ease var(--dt-toast-hold, 3000ms) forwards; }
 }
+.dt-single-tab { display: flex; border-bottom: 0.5px solid var(--dsw-alias-border-l3); }
+.dt-hidden-tabs { display: none; }
 .dt-page .dt-tab { height: 34px; padding: 0 2px; border: 0; border-radius: 0; color: var(--dsw-alias-label-tertiary); font-size: 14px; }
 .dt-page .dt-tab[aria-selected='true'] { background: none; color: var(--dsw-alias-label-primary); font-weight: 500; box-shadow: inset 0 -1.5px 0 var(--dsw-alias-label-primary); }
 .dt-status-head { display: flex; align-items: center; gap: 8px; }

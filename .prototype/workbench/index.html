@@ -942,9 +942,10 @@ const CONFIG=[
     {label:'接收私聊',type:'switch',value:true},
     {label:'每页消息数',type:'number',value:20},
     {label:'链接查询时限(ms)',type:'number',value:5000}]},
-  {title:'本地',icon:'▣',tone:'amber',rows:[
+  {title:'工作区',icon:'▣',tone:'amber',rows:[
+    {label:'本地文件夹',type:'path',value:'D:\\projects\\demo'},
+    {label:'添加文件夹',type:'button',value:'+ 选择本地目录'},
     {label:'可提要求的账号',type:'text',value:'operator'},
-    {label:'工作文件夹 / 路径',type:'path',value:'D:\\projects\\demo'},
     {label:'允许名单为空即无人',type:'switch',value:true}]},
   {title:'模型配置',icon:'✦',tone:'model',kind:'model',roles:[
     {name:'评审模型', provider:'workbuddy', model:'hy4flash-free', effort:'high'},
@@ -983,6 +984,7 @@ function renderConfig(){
         if(r.type==='switch') return `<label>${esc(r.label)}<span class="switch ${r.value?'on':''}"></span></label>`;
         if(r.type==='select') return `<label>${esc(r.label)}<select>${r.options.map(o=>`<option ${o===r.value?'selected':''}>${o}</option>`).join('')}</select></label>`;
         if(r.type==='path') return `<label>${esc(r.label)}<span class="path-field"><input type="text" class="dt-mono" value="${esc(r.value)}" spellcheck="false"><button type="button" class="path-browse" title="选择文件夹">浏览…</button></span></label>`;
+        if(r.type==='button') return `<label>${esc(r.label)}<button type="button" class="path-browse">${esc(r.value)}</button></label>`;
         return `<label>${esc(r.label)}<input type="${r.type}" value="${esc(r.value)}"></label>`;
       }).join('')}</div>`;
     if(c.tone){

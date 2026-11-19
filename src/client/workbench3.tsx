@@ -260,6 +260,46 @@ function ReplyBoard({ sources }: { sources?: SourceStatusRow[] }) {
   </div>
 }
 
+/** Workspace drawer: the local folders a request may act on, backed by the real targets API. */
+function WorkspaceDrawer({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const { call, notify } = usePanel()
+  const { data: targets, reload } = usePoll(() => call('GET targets'), [])
+  const [path, setPath] = useState('')
+  const [busy, setBusy] = useState(false)
+  const dirs = (targets?.items ?? []).filter(item => item.kind === 'directory')
+  const add = async () => {
+    if (!path.trim() || busy) return
+    setBusy(true)
+    try {
+      await call('POST targets', { body: { kind: 'directory', root: path.trim() } })
+      setPath(''); await reload(); notify('已添加本地文件夹')
+    } catch (failure) { notify(failure instanceof Error ? failure.message : String(failure)) }
+    finally { setBusy(false) }
+  }
+  const remove = async (id: string) => {
+    try { await call('DELETE targets/:id', { id }); await reload() }
+    catch (failure) { notify(failure instanceof Error ? failure.message : String(failure)) }
+  }
+  return <div className={`cfg drawer tone-amber ${open ? 'open' : ''}`}>
+    <button type="button" className="drawer-head" aria-expanded={open} onClick={onToggle}>
+      <span className="cfg-icon">▣</span><span className="drawer-title">工作区</span><span className="drawer-chevron">▾</span>
+    </button>
+    <div className="cfg-body">
+      <div className="meta" style={{ fontSize: 11, color: 'var(--ink-3)' }}>本地文件夹：工作台要求可作用于这些目录，直接改里面的文件。</div>
+      {dirs.length === 0 && <div className="meta" style={{ fontSize: 11, color: 'var(--ink-3)' }}>还没有本地文件夹目标。</div>}
+      {dirs.map(item => <label key={item.id} style={{ gap: 6 }}>
+        <span className="dt-mono" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.root}</span>
+        <button type="button" className="path-browse" onClick={() => void remove(item.id)}>移除</button>
+      </label>)}
+      <label style={{ gap: 6 }}>
+        <span className="path-field"><input type="text" className="dt-mono" value={path}
+          onChange={e => setPath(e.target.value)} placeholder="绝对路径，如 D:\\projects\\app" /></span>
+      </label>
+      <button type="button" className="path-browse" disabled={busy || !path.trim()} onClick={() => void add()}>添加文件夹</button>
+    </div>
+  </div>
+}
+
 /** Config area: source drawers (floating), model config drawer, two config entry cards, automation switches. */
 function ConfigArea() {
   const { call, notify } = usePanel()
@@ -282,9 +322,9 @@ function ConfigArea() {
         <span className="entry-main"><strong>规则与允许名单</strong><small>谁能发起工作 · 研判规则 · 准入表 · 接单模式</small></span><Icon name="chevron-right" size={18} /></button>
     </div>
     <div className="card config-grid">
-      {(sources ?? []).map(s => {
-        const tone = s.id === 'github' ? 'blue' : s.id === 'feishu' ? 'green' : 'amber'
-        const icon = s.id === 'github' ? '◈' : s.id === 'feishu' ? '✈' : '▣'
+      {sources.filter(s => s.id !== 'workbench').map(s => {
+        const tone = s.id === 'github' ? 'blue' : 'green'
+        const icon = s.id === 'github' ? '◈' : '✈'
         return <div key={s.id} className={`cfg drawer tone-${tone} ${open === s.id ? 'open' : ''}`}>
           <button type="button" className="drawer-head" aria-expanded={open === s.id} onClick={() => setOpen(open === s.id ? null : s.id)}>
             <span className="cfg-icon">{icon}</span><span className="drawer-title">{s.title.zh ?? s.title.en}</span><span className="drawer-chevron">▾</span>
@@ -296,6 +336,7 @@ function ConfigArea() {
           </div>
         </div>
       })}
+      <WorkspaceDrawer open={open === 'workspace'} onToggle={() => setOpen(open === 'workspace' ? null : 'workspace')} />
       <div className={`cfg cfg-model drawer tone-model ${open === 'model' ? 'open' : ''}`}>
         <button type="button" className="drawer-head" aria-expanded={open === 'model'} onClick={() => setOpen(open === 'model' ? null : 'model')}>
           <span className="cfg-icon">✦</span><span className="drawer-title">模型配置</span><span className="drawer-chevron">▾</span>

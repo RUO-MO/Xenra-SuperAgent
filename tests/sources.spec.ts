@@ -27,7 +27,7 @@ import { join } from 'node:path'
 const MEMBER = 'ou_alice'
 function host(overrides: Partial<SourceContextDeps> = {}) {
   const store = new Store(join(mkdtempSync(join(tmpdir(), 'sources-')), 'db.sqlite'))
-  const settings = SettingsSchema.parse({ policy: { sources: { feishu: { allowed: [{ id: 'ou_alice', name: 'Alice' }], syncChat: 'oc_team' }, github: { allowed: [{ id: 'alice' }] } } }, eval: { mode: 'auto' }, sources: { feishu: { enabled: true, config: { chats: [{ chatId: 'oc_team', listen: 'mentions' }, { chatId: 'oc_observed', listen: 'all' }], directMessages: true } } } })
+  const settings = SettingsSchema.parse({ policy: { sources: { feishu: { allowed: [{ id: 'ou_alice', name: 'Alice' }], syncChat: 'oc_team' }, github: { allowed: [{ id: 'alice' }] } } }, eval: { mode: 'auto', autoReview: true, autoTicket: true }, sources: { feishu: { enabled: true, config: { chats: [{ chatId: 'oc_team', listen: 'mentions' }, { chatId: 'oc_observed', listen: 'all' }], directMessages: true } } } })
   store.saveSettings(settings)
   const board = new HealthBoard()
   const sources = new SourceRegistry(() => store.settings(), board)

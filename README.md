@@ -81,3 +81,4 @@ pnpm check
 ## 致谢
 
 本项目的骨架来自 DeepSeek 团队开源的 [dsh-superagent-prototype](https://github.com/deepseek-ai/dsh-superagent-prototype)：它确立了这套主动式智能体的领域模型、授权与执行分离的结构，以及"少打扰人"的设计取向。Xenra-SuperAgent 在此基础上重写为独立的项目与独立的文档，并跟随 DeepSeek Harness 0.2.2 的接口。特别感谢 DeepSeek 团队把这项工作开源出来。
+gate test

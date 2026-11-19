@@ -1,4 +1,4 @@
-import { $ as settled, A as MandateBasis, B as TicketEndBy, C as Decision, D as Follow, E as Execution, F as Thread, G as followupOwners, H as TicketOutcome, I as ThreadFact, J as latestReport, K as isoTime, L as ThreadFacts, M as ReportState, N as Strength, O as FollowupRecords, P as Text, Q as runningAssignment, R as ThreadRef, S as ChannelRef, T as Evaluation, U as Trigger, V as TicketInput, W as TriggerDisposition, X as reached, Y as liveTicket, Z as readUntil, _ as ActorRef, a as DomainEvent, at as ReasonCode, b as AssignmentState, c as GateResult, ct as Config, d as Policy, et as threadKey, f as ReplyStatus, g as AcceptMode, h as SourceScope, i as Candidate, it as Reason, j as PolicyEffect, k as Mandate, l as OutboundMessage, lt as Deployment, m as ScopeResult, n as AssessmentOutcome, nt as waitsForPerson, o as DomainEvents, ot as reasonText, p as Repositories, q as latestAssignment, r as Assessor, rt as REASONS, s as Executor, st as said, t as ReceiveResult, tt as ticketOutcome, u as Outbox, ut as DeploymentConfig, v as AdmissionCell, w as DecisionKind, x as Attention, y as Assignment, z as Ticket } from "./intake-JdfR0r-C.js";
+import { $ as runningAssignment, A as MandateBasis, B as TicketEndBy, C as Decision, D as Follow, E as Execution, F as Thread, G as TriggerDisposition, H as TicketOutcome, I as ThreadFact, J as latestAssignment, K as followupOwners, L as ThreadFacts, M as ReportState, N as Strength, O as FollowupRecords, P as Text, Q as readUntil, R as ThreadRef, S as ChannelRef, T as Evaluation, U as TicketProposal, V as TicketInput, W as Trigger, X as liveTicket, Y as latestReport, Z as reached, _ as ActorRef, a as DomainEvent, at as Reason, b as AssignmentState, c as GateResult, ct as said, d as Policy, dt as DeploymentConfig, et as settled, f as ReplyStatus, g as AcceptMode, h as SourceScope, i as Candidate, it as REASONS, j as PolicyEffect, k as Mandate, l as OutboundMessage, lt as Config, m as ScopeResult, n as AssessmentOutcome, nt as ticketOutcome, o as DomainEvents, ot as ReasonCode, p as Repositories, q as isoTime, r as Assessor, rt as waitsForPerson, s as Executor, st as reasonText, t as ReceiveResult, tt as threadKey, u as Outbox, ut as Deployment, v as AdmissionCell, w as DecisionKind, x as Attention, y as Assignment, z as Ticket } from "./intake-Bs3duRld.js";
 import { Context } from "@deepseek-ai/cordis";
 //#region src/core/part.d.ts
 interface EngineOptions {
@@ -113,6 +113,14 @@ declare class Engine {
    * mode or without enabled matching rules.
    */
   decide(triggerId: string, outcome: Outcome): Decision;
+  /** Let a Trigger waiting at the review gate into Eval. */
+  approveReview(triggerId: string): boolean;
+  /** Drop a Trigger waiting at the review gate, with no Eval and no model spend. */
+  dropReview(triggerId: string): boolean;
+  /** Create the Ticket a pending proposal described. */
+  approveProposal(decisionId: string): Decision;
+  /** Reject a pending proposal without creating a Ticket. */
+  rejectProposal(decisionId: string): Decision;
   /**
    * Attach a Trigger to a ticket that the message points at: the ticket follows the Trigger's Threads and receives it as an
    * Input with the routing note, and the Eval that holds the Trigger ends, since the ticket has it now; the other Triggers of
@@ -247,6 +255,9 @@ declare const USER_ERRORS: {
   readonly unknownTicket: readonly ["missing", "Unknown ticket"];
   readonly unknownProblem: readonly ["missing", "Unavailable Eval not found"];
   readonly unknownTrigger: readonly ["missing", "Unknown trigger"];
+  readonly unknownProposal: readonly ["missing", "Ticket proposal not found"];
+  readonly proposalDecided: readonly ["refused", "This ticket proposal was already approved or rejected"];
+  readonly notAtGate: readonly ["refused", "Trigger is not waiting at the review gate"];
   readonly unknownAssignment: readonly ["missing", "Unknown assignment"];
   readonly unknownBlock: readonly ["missing", "Unknown settings block: {block}"];
   readonly unknownPromptRevision: readonly ["missing", "Unknown prompt revision {revision}"];
@@ -366,4 +377,4 @@ declare const name = "xenra-superagent";
 declare const inject: string[];
 declare function apply(ctx: Context, config: DeploymentConfig): Promise<void>;
 //#endregion
-export { AcceptMode, ActorRef, AdmissionCell, AssessmentOutcome, Assessor, Assignment, AssignmentState, Attention, Candidate, ChannelRef, Config, Decision, DecisionKind, type Deployment, type DeploymentConfig, DomainEvent, DomainEvents, Engine, type EngineForExecutor, type EngineForMainSession, type EngineForPeople, type EngineForSettings, type EngineForSources, type EngineOptions, Evaluation, Execution, Executor, Follow, FollowupRecords, GateResult, Mandate, MandateBasis, MemoryRepositories, OutboundMessage, Outbox, type Outcome, Policy, PolicyEffect, REASONS, type Reason, type ReasonCode, type ReceiveResult, type Reply, type ReplyRequest, ReplyStatus, ReportState, Repositories, ScopeResult, SourceScope, Strength, Text, Thread, ThreadFact, ThreadFacts, ThreadRef, Ticket, TicketEndBy, TicketInput, TicketOutcome, type TicketStage, Trigger, TriggerDisposition, USER_ERRORS, UserError, type UserErrorCode, type WorkerReport, apply, canRetry, followupOwners, inject, isoTime, key, latestAssignment, latestReport, liveTicket, name, reached, readUntil, reasonText, runningAssignment, said, settled, threadKey, ticketOutcome, ticketStage, waitsForPerson };
+export { AcceptMode, ActorRef, AdmissionCell, AssessmentOutcome, Assessor, Assignment, AssignmentState, Attention, Candidate, ChannelRef, Config, Decision, DecisionKind, type Deployment, type DeploymentConfig, DomainEvent, DomainEvents, Engine, type EngineForExecutor, type EngineForMainSession, type EngineForPeople, type EngineForSettings, type EngineForSources, type EngineOptions, Evaluation, Execution, Executor, Follow, FollowupRecords, GateResult, Mandate, MandateBasis, MemoryRepositories, OutboundMessage, Outbox, type Outcome, Policy, PolicyEffect, REASONS, type Reason, type ReasonCode, type ReceiveResult, type Reply, type ReplyRequest, ReplyStatus, ReportState, Repositories, ScopeResult, SourceScope, Strength, Text, Thread, ThreadFact, ThreadFacts, ThreadRef, Ticket, TicketEndBy, TicketInput, TicketOutcome, TicketProposal, type TicketStage, Trigger, TriggerDisposition, USER_ERRORS, UserError, type UserErrorCode, type WorkerReport, apply, canRetry, followupOwners, inject, isoTime, key, latestAssignment, latestReport, liveTicket, name, reached, readUntil, reasonText, runningAssignment, said, settled, threadKey, ticketOutcome, ticketStage, waitsForPerson };

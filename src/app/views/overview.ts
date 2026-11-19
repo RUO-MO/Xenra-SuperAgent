@@ -3,6 +3,7 @@ import { reasonText, ticketStage, type Decision, type Thread } from '../../core/
 import type { Health } from '../../sources/host.ts'
 import type { SetupProblem } from '../../setup.ts'
 import { anyoneAllowed } from '../../policy.ts'
+import type { ModelFailure } from '../sessions.ts'
 import type { Store } from '../store.ts'
 import { awaitingEval, dayAgo, newestFirst, ownersOf, snapshot, threadSummary, type ViewHost } from './records.ts'
 import { sourceHealth, type HealthMap } from './sources.ts'
@@ -35,7 +36,8 @@ export function evalsHealth(store: Store, now = Date.now()): Health {
  * Builds the operator overview: active system problems, tickets awaiting human action, executor load, and 24-hour trigger flow.
  * @param setup - Setup problem to surface first (where setup stopped, or a Source paused by setup).
  */
-export function overview(host: ViewHost, health: HealthMap, policyVersionValue: string, load: ExecutorLoad, setup?: SetupProblem) {
+export function overview(host: ViewHost, health: HealthMap, policyVersionValue: string, load: ExecutorLoad, setup?: SetupProblem,
+  modelFailure?: ModelFailure) {
   const { store, sources } = host
   const view = snapshot(host)
   const settings = store.settings()
@@ -60,6 +62,7 @@ export function overview(host: ViewHost, health: HealthMap, policyVersionValue: 
       .map(thread => ({ kind: 'eval-overdue' as const, thread: threadSummary(view, thread) })),
     ...unjudged(store, since).map(({ thread, decision }) => ({ kind: 'eval-unavailable' as const, decisionId: decision.id,
       thread: threadSummary(view, thread), reason: decision.reason, triggerId: decision.triggerIds[0] ?? '' })),
+    ...modelFailure ? [{ kind: 'model-error' as const, sessionId: 'main', ...modelFailure }] : [],
     ...store.read.failingReplies().map(item => ({ kind: 'outgoing' as const, outgoing: { id: item.id, channel: item.channel,
       text: preview(item.text),
       attempts: item.attempts, error: item.error } })),
@@ -68,13 +71,24 @@ export function overview(host: ViewHost, health: HealthMap, policyVersionValue: 
   const stats = Object.values(store.read.triggerStats(since))
   const received = stats.reduce((sum, item) => sum + item.received, 0), filtered = stats.reduce((sum, item) => sum + item.filtered, 0)
   const judgement = store.read.flow(since)
+  const review = gateCount(store, "value ->> '$.review.state' = 'pending'")
+  const proposed = gateCount(store, "value ->> '$.proposal.state' = 'pending'", 'decision')
+  const replyStats = store.read.outboxStats(since)
+  const recentReplies = store.read.recentReplies(12).map(receipt => ({ id: receipt.id, status: receipt.status, source: receipt.channel.source,
+    kind: receipt.kind, text: preview(receipt.text), at: receipt.dropped?.at ?? '', dropped: receipt.dropped?.reason,
+    ...receipt.ticketId ? { ticketId: receipt.ticketId } : {} }))
   return {
     problems,
     person: open.filter(ticket => ticketStage(ticket).stage === 'person').map(ticket => ticketRow(view, ticket)),
     executor: { ...load, maxWorkers: settings.executor.maxWorkers, idle: open.filter(ticket => ticketStage(ticket).stage === 'idle').length },
     flow: { received, filtered, triggers: received - filtered, judged: judgement.judged, accepted: judgement.accepted,
-      evaluating: evaluating.length, dropped: store.read.droppedSince(since) },
+      evaluating: evaluating.length, dropped: store.read.droppedSince(since), review, proposed },
+    replies: { ...replyStats, recent: recentReplies },
     policyVersion: policyVersionValue,
   }
 }
 export type OverviewView = ReturnType<typeof overview>
+function gateCount(store: Store, where: string, table: 'disposition' | 'decision' = 'disposition'): number {
+  const row = store.db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${where}`).get() as { n?: number } | undefined
+  return Number(row?.n ?? 0)
+}

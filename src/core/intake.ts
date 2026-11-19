@@ -1,7 +1,8 @@
 /** Trigger ingestion, thread correlation, subscription fan-out, and evaluation queuing. */
 import { key } from './ids.ts'
+import { UserError } from './errors.ts'
 import { isoTime, liveTicket, threadKey } from './model.ts'
-import type { Ticket, Trigger } from './model.ts'
+import type { Ticket, Trigger, TriggerDisposition } from './model.ts'
 import { EnginePart, type EngineOptions } from './part.ts'
 import type { Tickets } from './tickets.ts'
 
@@ -51,13 +52,43 @@ export class Intake extends EnginePart {
         ...trigger.human ? { human: true } : {}, ...followed ? { context: true } : {} })
     }
     const fanout = [...reached.keys()], context = fanout.filter(id => reached.get(id)!.context)
-    const disposition = { fanout, ...context.length ? { context } : {}, at }
+    const disposition: TriggerDisposition = { fanout, ...context.length ? { context } : {}, at }
+    // Persist fan-out first: ownership reads it, and the review hold is recorded on the same row.
     this.repo.triggers.saveDisposition(trigger.id, disposition)
+    const owned = this.owners(trigger).length > 0
     // A person's message that no ticket decides, such as one that reached only tickets a person stopped or that follow the
-    // Thread for context, and every bot's, goes to Eval.
-    if (!this.owners(trigger).length) this.queueForEval(trigger)
+    // Thread for context, and every bot's, goes to Eval. Under the review gate it waits for a person first, so a garbage
+    // message never costs assessment tokens.
+    if (!owned && this.policy().reviewGate) this.repo.triggers.saveDisposition(trigger.id, { ...disposition, review: { state: 'pending', at } })
+    else if (!owned) this.queueForEval(trigger)
     for (const ticketId of fanout) this.tickets.wake(ticketId)
     this.emit('trigger.received', { triggerId: trigger.id, threads: trigger.threads.map(threadKey) })
     return 'stored'
+  }
+  /**
+   * Let a Trigger waiting at the review gate into Eval: clear its review hold and queue it.
+   * @throws UserError when the Trigger is unknown or is not waiting at the review gate.
+   */
+  approveReview(triggerId: string): boolean {
+    const trigger = this.repo.triggers.get(triggerId)
+    if (!trigger) throw new UserError('unknownTrigger')
+    const disposition = this.repo.triggers.disposition(triggerId)
+    if (!disposition?.review) throw new UserError('notAtGate')
+    const { review: _review, ...rest } = disposition
+    this.repo.triggers.saveDisposition(triggerId, rest)
+    this.queueForEval(trigger)
+    this.emit('trigger.reviewApproved', { triggerId })
+    return true
+  }
+  /** Drop a Trigger at the review gate without Eval: no model token is spent. */
+  dropReview(triggerId: string): boolean {
+    const trigger = this.repo.triggers.get(triggerId)
+    if (!trigger) throw new UserError('unknownTrigger')
+    const disposition = this.repo.triggers.disposition(triggerId)
+    if (!disposition?.review) throw new UserError('notAtGate')
+    const { review: _review, ...rest } = disposition
+    this.repo.triggers.saveDisposition(triggerId, { ...rest, filtered: { code: 'manualDrop' } })
+    this.emit('trigger.dropped', { triggerId })
+    return true
   }
 }

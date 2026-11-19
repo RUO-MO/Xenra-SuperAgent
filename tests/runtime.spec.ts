@@ -103,7 +103,8 @@ function seed(store: Store, accounts: Accounts = {}): void {
   const settings = store.settings()
   const { feishu: _feishu, ...others } = settings.sources
   const feishu = accounts.feishu === null ? undefined : { ...settings.sources.feishu?.config, cli: BOT(), ...accounts.feishu }
-  store.saveSettings(SettingsSchema.parse({ ...settings, sources: { ...others, github: { enabled: true, config: { repository: 'acme/widgets', cli: AGENT(), ...accounts.github } }, ...feishu ? { feishu: { enabled: true, config: feishu } } : {} } }))
+  store.saveSettings(SettingsSchema.parse({ ...settings, eval: { ...settings.eval, autoReview: true, autoTicket: true },
+    sources: { ...others, github: { enabled: true, config: { repository: 'acme/widgets', cli: AGENT(), ...accounts.github } }, ...feishu ? { feishu: { enabled: true, config: feishu } } : {} } }))
 }
 let restarts: ReturnType<typeof vi.fn<() => void>>
 async function restart(machine: Partial<Machine> = {}, accounts: Accounts = {}): Promise<Runtime> {
@@ -213,7 +214,7 @@ beforeEach(async () => {
     events: vi.fn(async () => ({ records: [], hasMore: false, cursor: 0 })),
   }
   jobs = jobRegistry()
-  services = { agents, llm: { resolveCallConfig: vi.fn(async value => value) }, sessionController: controller, sessionPersistence: { flush: vi.fn(async () => {}), open: vi.fn(async () => ({ read: async () => ({ events: [] }), [Symbol.asyncDispose]: async () => {} })) }, workspaceRegistry: { create: async (cwd: string) => ({ id: cwd }) }, permissionPresets: { set: () => {} }, subprocess, webServer: { host: '127.0.0.1', port: 3082, getOrigin: () => 'http://127.0.0.1:3082', register: (route: { handler: HttpHandler }) => { http = route.handler; return () => {} } }, jobs: jobs.service }
+  services = { agents, llm: { resolveCallConfig: vi.fn(async value => value) }, sessionController: controller, sessionPersistence: { flush: vi.fn(async () => {}), open: vi.fn(async () => ({ read: async () => ({ events: [] }), [Symbol.asyncDispose]: async () => {} })) }, workspaceRegistry: { create: async (cwd: string) => ({ id: cwd, path: cwd, attachSession: async () => {} }) }, permissionPresets: { set: () => {} }, subprocess, webServer: { host: '127.0.0.1', port: 3082, getOrigin: () => 'http://127.0.0.1:3082', register: (route: { handler: HttpHandler }) => { http = route.handler; return () => {} } }, jobs: jobs.service }
   for (const [name, service] of Object.entries(services)) ctx.reflect.provide(name, service)
   for (const cli of [AGENT(), OTHER(), BOT()]) writeFileSync(cli, '#!/bin/sh\n', { mode: 0o755 })
   const store = new Store(join(directory, 'orchestrator.sqlite')); seed(store); store.close()
@@ -1712,11 +1713,12 @@ it('restarts a worker whose shell job the host stop ended with the recovery note
   expect(recovered.inputs).toEqual([expect.objectContaining({ kind: 'text', text: expect.stringContaining('host restarted') })])
 })
 
-it('creates an Executor Session under the bundle\'s worker preset, and the main Session under its router preset', async () => {
+it('creates an Executor Session under the bundle\'s worker preset, and the review and proposal Sessions under its router preset', async () => {
   const { sessionId } = await acceptedTicket()
   const created = controller.create.mock.calls.map(([options]) => options as { sessionId: string; agentPreset: string })
   expect(created.find(options => options.sessionId === sessionId)).toMatchObject({ agentPreset: 'xenra-superagent-worker' })
   expect(created.find(options => options.sessionId === runtime.masterId)).toMatchObject({ agentPreset: 'xenra-superagent-router' })
+  expect(created.find(options => options.sessionId === runtime.proposalId)).toMatchObject({ agentPreset: 'xenra-superagent-router' })
 })
 
 it('selects its own preset again for a main Session or worker a person switched before its first turn, and not after it', async () => {

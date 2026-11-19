@@ -17,6 +17,10 @@ export interface SourceScope {
 export interface Policy {
   version: string
   paused: boolean
+  /** Whether admitted Triggers stop at the review gate instead of queueing for Eval immediately. */
+  reviewGate?: boolean
+  /** Whether an accept stops at the ticket gate and waits for a person instead of creating its Ticket immediately. */
+  ticketGate?: boolean
   gate(trigger: Trigger, thread: Thread, tickets: Ticket[]): GateResult
   /** Re-check a mandate's gate-layer basis under this policy, such as before an ended ticket resumes. */
   revalidate(mandate: Mandate): boolean
@@ -85,8 +89,15 @@ export interface Outbox {
 /** What the Engine reports after a change, by event type. */
 export interface DomainEvents {
   'trigger.received': { triggerId: string; threads: string[] }
+  /** An admitted Trigger stopped at the review gate, was let into Eval, or was dropped there without an Eval. */
+  'trigger.reviewApproved': { triggerId: string }
+  'trigger.dropped': { triggerId: string }
   'eval.started': { evalId: string; threadKey: string; triggerIds: string[]; strength: Strength }
   'decision.recorded': { decisionId: string; kind: DecisionKind; threadKey: string }
+  /** An accept held at the ticket gate, then approved into a Ticket or rejected. */
+  'decision.proposed': { decisionId: string; threadKey: string }
+  'decision.approved': { decisionId: string; ticketId: string }
+  'decision.rejected': { decisionId: string }
   'ticket.created': { ticketId: string; decisionId: string; strength: Strength }
   'ticket.resumed': { ticketId: string; triggerId: string }
   'ticket.ended': { ticketId: string; by: TicketEndBy; outcome: TicketOutcome; reason?: string }
@@ -107,6 +118,8 @@ export interface Repositories {
   atomic<T>(work: () => T): T
   triggers: {
     get(id: string): Trigger | undefined
+    /** Recent Triggers newest first, for gate queues; optional for narrow test repositories. */
+    list?(limit?: number): Trigger[]
     save(trigger: Trigger): void
     disposition(id: string): import('./model.ts').TriggerDisposition | undefined
     saveDisposition(id: string, value: import('./model.ts').TriggerDisposition): void
@@ -130,5 +143,7 @@ export interface Repositories {
     get(id: string): Decision | undefined
     save(decision: Decision): void
     byThread(key: string): Decision[]
+    /** Accepts waiting at the ticket gate; optional for narrow test repositories. */
+    proposals?(): Decision[]
   }
 }

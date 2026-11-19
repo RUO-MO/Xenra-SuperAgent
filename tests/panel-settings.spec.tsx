@@ -32,7 +32,7 @@ it('saves the Eval block on the Eval settings and the Executor with its executio
   const [provider, model] = all('.dt-model input')
   await type(provider as HTMLInputElement, 'worker-provider'); await type(model as HTMLInputElement, 'worker-model')
   await click(zh.save)
-  expect(server.settings.eval).toEqual({ mode: 'auto', timeoutSeconds: 180, model: { provider: 'worker-provider', model: 'worker-model' } })
+  expect(server.settings.eval).toEqual({ mode: 'auto', timeoutSeconds: 180, model: { provider: 'worker-provider', model: 'worker-model' }, autoReview: false, autoTicket: false })
   await click(find(zh['settingsGroup.execution'], '.dt-settings-link'))
   await type(field<HTMLInputElement>(zh.maxWorkers), '5')
   // An empty root uses the default directory, which the field names instead of looking set.

@@ -189,12 +189,14 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `src/app/api.ts` | `Api`: every route with its parameters, query, body and response, and the list filters; types only |
 | `src/app/tools/tool.ts` | `Tool`, `RegisterTool`, `readTool` and `AcknowledgementSchema` |
 | `src/app/tools/main.ts` | `mainTools` and `MainToolsHost`: the main Session's fourteen application tools |
+| `src/app/tools/proposal.ts` | `proposalTools` and `ProposalToolsHost`: the proposal Session's pending list and approve/reject tools |
 | `src/app/tools/executor.ts` | `executorTools` and `ExecutorToolsHost`: the Executor's six application tools |
 | `src/app/views/text.ts` | `preview`, `markdown`, `plain`, `readable` and `attribute`: the two forms of a view's text |
 | `src/app/views/records.ts` | The rows the views share, with `snapshot`, `ownersOf`, `channelLink` and `decisionView` |
 | `src/app/views/tickets.ts` | `ticketList`, `ticketDetail`, `basisFacts` and `executorLoad` |
 | `src/app/views/threads.ts` | `threadList`, `threadDetail`, `search` and `decisionList` |
 | `src/app/views/sources.ts` | `sourcesStatus`, `sourceHealth`, `sourceState` and `droppedReplies` |
+| `src/app/views/gates.ts` | `gatesView`: the real review queue and pending ticket proposals behind the two manual gates |
 | `src/app/views/settings.ts` | `settingsView`: each block with its revision, each Source's settings and Policy metadata, and the execution environment |
 | `src/app/views/overview.ts` | `overview` and `evalsHealth`: problems, Tickets awaiting a person, load and a day's flow |
 | `src/executor/dsh.ts` | `DshExecutor`, `WorkerSlots`, `ticketExecution`, `inputMessage`, `mandateInstructions` and `workerSessionId` |
@@ -296,6 +298,7 @@ Cases that need POSIX (`#!/bin/sh` shims, `tmux`, `ps`) are skipped with `it.ski
 | `tests/runtime.spec.ts` | The whole application on a simulated host, through the tools and HTTP |
 | `tests/runtime-concurrency.spec.ts` | Overlapping work: Trigger arriving during a turn, Tickets changing during delivery and launch |
 | `tests/tools.spec.ts` | The shape of both tool sets, role-scoped resource reads and routing validation |
+| `tests/proposal-tools.spec.ts` | The proposal Session's pending list, batch approve/reject and failure receipts |
 | `tests/http.spec.ts` | Same-origin and loopback checks, the status of each kind of failure, body limits, path parameters and query |
 | `tests/settings.spec.ts` | Saves racing a model or account check, Policy sync, pause and refusals |
 | `tests/views.spec.ts` | What the views derive from the Store |

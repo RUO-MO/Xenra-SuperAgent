@@ -133,6 +133,9 @@ export class Evals extends EnginePart {
     if (!trigger) throw new UserError('unknownTrigger')
     const held = this.holding(triggerId)
     if (outcome.evalId && held?.evaluating?.id !== outcome.evalId) throw new UserError('evalFinished', { eval: outcome.evalId })
+    // A replayed trigger that already waits at the ticket gate returns that proposal rather than proposing a second ticket.
+    const proposed = outcome.kind === 'accept' ? (this.repo.decisions.proposals?.() ?? []).find(decision => decision.triggerIds.includes(triggerId)) : undefined
+    if (proposed) return proposed
     // Prevent a replayed trigger that already created a ticket from spawning a second one.
     const earlier = outcome.kind === 'accept' ? this.accepted(threadKey(trigger.threads[0]!)).get(triggerId) : undefined
     if (earlier) {
@@ -279,7 +282,7 @@ export class Evals extends EnginePart {
       strength: gate.strength, actor: trigger.actor, basis: gate.basis, policyVersion: policy.version, startedAt: at, deadline: at }
   }
   /** Apply an outcome to an Eval of a Thread: the one in progress, or a gate-only one. */
-  private decideEval(thread: Thread, evaluation: Evaluation, outcome: AssessmentOutcome): Decision {
+  private decideEval(thread: Thread, evaluation: Evaluation, outcome: Outcome): Decision {
     const audit = outcome.audit ? { audit: outcome.audit } : {}
     // Requeue if Policy changed without a live policyChanged call (such as across an upgrade or restart).
     if (this.policy().version !== evaluation.policyVersion) {
@@ -302,16 +305,67 @@ export class Evals extends EnginePart {
     }
     return this.accept(thread, evaluation, outcome)
   }
-  /** Record an accept with the Mandate the Eval gives, and have Tickets create its ticket. */
-  private accept(thread: Thread, evaluation: Evaluation, outcome: Extract<AssessmentOutcome, { kind: 'accept' }>): Decision {
+  /** Record an accept with the Mandate the Eval gives; create its Ticket now, or hold it at the ticket gate for a person. */
+  private accept(thread: Thread, evaluation: Evaluation, outcome: Extract<Outcome, { kind: 'accept' }>): Decision {
     const at = this.now()
     const basis = { ...evaluation.basis, ...(outcome.rules ? { rules: outcome.rules } : {}) }
     const { strength, policyVersion, actor } = evaluation
     const mandate: Mandate = { strength, policyVersion, basis, actor, scope: outcome.scope }
     const ticketId = key('ticket', evaluation.id)
     const audit = outcome.audit ? { audit: outcome.audit } : {}
-    const decision = this.finish(thread, evaluation, { kind: 'accept', reason: reasonOf(outcome.reason), ...audit, mandate, ticketId })
+    const held = this.policy().ticketGate
+    const decision = this.finish(thread, evaluation, { kind: 'accept', reason: reasonOf(outcome.reason), ...audit, mandate, ...held ? {} : { ticketId } })
+    if (held) {
+      decision.proposal = { state: 'pending', title: outcome.title, scope: outcome.scope, reason: reasonOf(outcome.reason),
+        triggerIds: evaluation.triggerIds, ...evaluation.primary ? { primary: evaluation.primary } : {},
+        ...outcome.acknowledgement ? { acknowledgement: outcome.acknowledgement } : {}, ...outcome.rules ? { rules: outcome.rules } : {},
+        ...outcome.name ? { name: outcome.name } : {}, ...outcome.note ? { note: outcome.note } : {},
+        ...outcome.audit ? { audit: outcome.audit } : {}, at }
+      this.repo.decisions.save(decision)
+      this.emit('decision.proposed', { decisionId: decision.id, threadKey: thread.key })
+      return decision
+    }
+    decision.ticketId = ticketId
+    this.repo.decisions.save(decision)
     this.tickets.create(ticketId, decision.id, mandate, evaluation, outcome, at)
+    return decision
+  }
+  /**
+   * Approve a pending ticket proposal: create the Ticket it described, with the Decision's Mandate and Eval's Triggers.
+   * @throws UserError when the Decision is unknown or its proposal is absent or already decided.
+   */
+  approveProposal(decisionId: string): Decision {
+    const decision = this.repo.decisions.get(decisionId)
+    const proposal = decision?.proposal
+    if (!decision || !proposal) throw new UserError('unknownProposal')
+    if (proposal.state !== 'pending') throw new UserError('proposalDecided')
+    if (!decision.mandate) throw new UserError('unknownProposal')
+    const at = this.now()
+    const ticketId = decision.ticketId ?? key('ticket', decision.evalId)
+    const outcome: Extract<AssessmentOutcome, { kind: 'accept' }> = { kind: 'accept', title: proposal.title, scope: proposal.scope,
+      reason: proposal.reason[0] ?? said('Accepted at the ticket gate'), ...proposal.acknowledgement ? { acknowledgement: proposal.acknowledgement } : {},
+      ...proposal.rules ? { rules: proposal.rules } : {}, ...proposal.audit ? { audit: proposal.audit } : {},
+      ...proposal.name ? { name: proposal.name } : {}, ...proposal.note ? { note: proposal.note } : {} }
+    this.tickets.create(ticketId, decision.id, decision.mandate,
+      { triggerIds: proposal.triggerIds, ...proposal.primary ? { primary: proposal.primary } : {} }, outcome, at)
+    decision.ticketId = ticketId
+    decision.proposal = { ...proposal, state: 'approved', decidedAt: at }
+    this.repo.decisions.save(decision)
+    this.emit('decision.approved', { decisionId: decision.id, ticketId })
+    return decision
+  }
+  /**
+   * Reject a pending ticket proposal without creating a Ticket.
+   * @throws UserError when the Decision is unknown or its proposal is absent or already decided.
+   */
+  rejectProposal(decisionId: string): Decision {
+    const decision = this.repo.decisions.get(decisionId)
+    const proposal = decision?.proposal
+    if (!decision || !proposal) throw new UserError('unknownProposal')
+    if (proposal.state !== 'pending') throw new UserError('proposalDecided')
+    decision.proposal = { ...proposal, state: 'rejected', decidedAt: this.now() }
+    this.repo.decisions.save(decision)
+    this.emit('decision.rejected', { decisionId: decision.id })
     return decision
   }
   /** Record an Eval's Decision; the Thread's own Eval ends with it, while a gate-only one leaves the Thread's Eval going. */

@@ -98,6 +98,14 @@ export class Engine {
    * mode or without enabled matching rules.
    */
   decide(triggerId: string, outcome: Outcome): Decision { return this.repo.atomic(() => this.evals.decide(triggerId, outcome)) }
+  /** Let a Trigger waiting at the review gate into Eval. */
+  approveReview(triggerId: string): boolean { return this.repo.atomic(() => this.intake.approveReview(triggerId)) }
+  /** Drop a Trigger waiting at the review gate, with no Eval and no model spend. */
+  dropReview(triggerId: string): boolean { return this.repo.atomic(() => this.intake.dropReview(triggerId)) }
+  /** Create the Ticket a pending proposal described. */
+  approveProposal(decisionId: string): Decision { return this.repo.atomic(() => this.evals.approveProposal(decisionId)) }
+  /** Reject a pending proposal without creating a Ticket. */
+  rejectProposal(decisionId: string): Decision { return this.repo.atomic(() => this.evals.rejectProposal(decisionId)) }
   /**
    * Attach a Trigger to a ticket that the message points at: the ticket follows the Trigger's Threads and receives it as an
    * Input with the routing note, and the Eval that holds the Trigger ends, since the ticket has it now; the other Triggers of

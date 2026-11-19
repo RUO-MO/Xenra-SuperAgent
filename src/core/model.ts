@@ -42,6 +42,11 @@ export interface Trigger {
 export interface TriggerDisposition {
   /** Rejected by the source scope filter before entering the domain, for the Source's reason. */
   filtered?: Reason
+  /**
+   * Held before Eval until a person lets it in (`pending`), so garbage never costs assessment tokens.
+   * A manual drop leaves this cleared and records `filtered` with `manualDrop`.
+   */
+  review?: { state: 'pending'; at: string }
   evalId?: string
   decisionId?: string
   /**
@@ -188,6 +193,23 @@ export interface ThreadFact { label?: Text; value: Text; problem?: true }
 export type ThreadFacts = Record<string, ThreadFact>
 
 export type DecisionKind = 'ignore' | 'accept' | 'reopen' | 'stop' | 'unavailable'
+/** An accept held before Ticket creation: the exact outcome a person approves or rejects at the second gate. */
+export interface TicketProposal {
+  state: 'pending' | 'approved' | 'rejected'
+  title: string
+  scope: string
+  acknowledgement?: string
+  rules?: string[]
+  name?: string
+  note?: string
+  /** The Eval's normalized reasons, kept for the ticket's acknowledgement and audit. */
+  reason: Reason[]
+  triggerIds: string[]
+  primary?: string
+  audit?: Record<string, unknown>
+  at: string
+  decidedAt?: string
+}
 /** Outcome of one eval, recorded on the thread. */
 export interface Decision {
   id: string
@@ -202,6 +224,8 @@ export interface Decision {
   strength: Strength
   ticketId?: string
   mandate?: Mandate
+  /** An accept held at the ticket gate until a person approves (creates the ticket) or rejects it. */
+  proposal?: TicketProposal
   /** Assessor-supplied audit data (rule assessments, direction, evidence). */
   audit?: Record<string, unknown>
   /** A person dismissed the problem an unavailable Decision shows. */

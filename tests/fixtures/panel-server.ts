@@ -179,7 +179,7 @@ function sourceStatuses(): SourceStatusRow[] {
 }
 const stateView = (): StateView => ({
   setup: server.setup, load: { running: server.setup.problem ? 0 : 2, queued: 0, maxWorkers: server.settings.executor.maxWorkers },
-  masterId: 'master', paused: server.settings.paused,
+  masterId: 'master', proposalId: 'proposal', paused: server.settings.paused,
   // The panel does not read health; the service script does.
   health: {},
 })
@@ -217,7 +217,10 @@ const overviewView = (): ApiResponse<'GET overview'> => {
       ...server.failing.map(outgoing => ({ kind: 'outgoing' as const, outgoing }))],
     person: server.person, executor: { running: 2, queued: 0, maxWorkers: server.settings.executor.maxWorkers, idle: 1 },
     flow: { received: 12, filtered: 2, triggers: 10, judged: 5, accepted: 1, evaluating: 0,
-      dropped: server.dropped.filter(item => item.dropped.at >= dayAgo()).length },
+      dropped: server.dropped.filter(item => item.dropped.at >= dayAgo()).length, review: 0, proposed: 0 },
+    replies: { sent: 9, pending: 2, dropped: server.dropped.filter(item => item.dropped.at >= dayAgo()).length,
+      recent: [{ id: 'o1', status: 'sent', source: 'feishu', kind: 'reply', text: '已处理', at: '', dropped: undefined },
+        { id: 'o2', status: 'pending', source: 'github', kind: 'reply', text: '正在执行', at: '', dropped: undefined }] },
     policyVersion: 'abcdef1234567890',
   }
 }
@@ -328,7 +331,15 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
     return { tickets: [], threads: server.search.threads, items: server.search.items.filter(item => item.preview.includes(q)) }
   } },
   'GET sources': { answer: sourceStatuses },
+  'GET gates': { answer: () => ({ review: { items: [], dropped: 0 }, ticket: { items: [], rejected: 0 } }) },
+  'POST gates/review': { body: true, answer: () => ({ changed: 0, failed: [] }) },
+  'POST gates/ticket': { body: true, answer: () => ({ changed: 0, failed: [] }) },
   'GET settings': { answer: settingsView },
+  'GET master/model': { answer: () => ({ sessionId: 'main-session', configured: server.settings.eval.model,
+    current: { provider: 'workbuddy', model: 'hy4flash-free' }, archived: false }) },
+  'POST master/model': { answer: () => ({ applied: true as const, current: { provider: 'workbuddy', model: 'hy4flash-free' } }) },
+  'POST master/restore': { answer: () => ({ restored: true, archived: false,
+    current: { provider: 'workbuddy', model: 'hy4flash-free' } }) },
   'POST sources/:id/labels': { answer: () => {
     // Label refresh failures come from the bot CLI and are returned verbatim.
     if (server.joinError) return refuse(500, server.joinError)

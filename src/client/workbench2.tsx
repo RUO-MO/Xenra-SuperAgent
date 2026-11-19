@@ -15,6 +15,7 @@ import { EvalSettings } from './eval.tsx'
 import { PromptsPage } from './prompts.tsx'
 import { ModelField, SettingsProvider, SourceField, useBlockDraft, useSettings } from './settings-kit.tsx'
 import { SaveBar } from './draft.tsx'
+import { problemText } from './workbench3.tsx'
 
 type Overview = ApiResponse<'GET overview'>
 
@@ -144,7 +145,7 @@ function SystemIssues({ problems }: { problems: Problem[] }) {
         <Tag key={group} tone="danger">{t(`todoSystemGroup.${group}`)}</Tag>)}</div></div>
     {([...groups.entries()] as [SystemGroup, Problem[]][]).map(([group, items]) => <div className="dt-todo-group" key={group}>
       <h4>{t(`todoSystemGroup.${group}`)}</h4>
-      {items.map((problem, index) => <p className="dt-todo-issue" key={index}>{problem.kind}</p>)}
+      {items.map((problem, index) => <p className="dt-todo-issue" key={index}>{problemText(problem)}</p>)}
     </div>)}
   </div>
 }
@@ -153,7 +154,7 @@ function systemGroup(problem: Problem): SystemGroup {
   switch (problem.kind) {
     case 'source-error': case 'setup': case 'runtime-error': case 'no-source': case 'no-allowed': case 'executor-paused': return 'runtime-error'
     case 'outgoing': return 'outgoing'
-    case 'eval-overdue': case 'eval-unavailable': return 'eval'
+    case 'eval-overdue': case 'eval-unavailable': case 'model-error': return 'eval'
     default: return 'config'
   }
 }

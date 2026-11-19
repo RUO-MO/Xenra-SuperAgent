@@ -189,12 +189,14 @@ window.__ModuleLoader__.load({ id: "xenra-superagent", factory: (require) => { /
 | `src/app/api.ts` | `Api`：每条路由的参数、查询、请求体与响应，以及列表过滤条件；只 import 类型 |
 | `src/app/tools/tool.ts` | `Tool`、`RegisterTool`、`readTool`、`AcknowledgementSchema` |
 | `src/app/tools/main.ts` | `mainTools` 与 `MainToolsHost`：主 Session 的十四个应用工具 |
+| `src/app/tools/proposal.ts` | `proposalTools` 与 `ProposalToolsHost`：立项 Session 的待立项列表与立项/驳回工具 |
 | `src/app/tools/executor.ts` | `executorTools` 与 `ExecutorToolsHost`：执行器的六个应用工具 |
 | `src/app/views/text.ts` | `preview`、`markdown`、`plain`、`readable`、`attribute`：视图文本的两种形式 |
 | `src/app/views/records.ts` | 视图共用的行与 `snapshot`、`ownersOf`、`channelLink`、`decisionView` |
 | `src/app/views/tickets.ts` | `ticketList`、`ticketDetail`、`basisFacts`、`executorLoad` |
 | `src/app/views/threads.ts` | `threadList`、`threadDetail`、`search`、`decisionList` |
 | `src/app/views/sources.ts` | `sourcesStatus`、`sourceHealth`、`sourceState`、`droppedReplies` |
+| `src/app/views/gates.ts` | `gatesView`：两道人工门背后的真实待分流队列与待立项方案 |
 | `src/app/views/settings.ts` | `settingsView`：各块及其修订号、每个来源的配置与策略元数据、执行环境 |
 | `src/app/views/overview.ts` | `overview` 与 `evalsHealth`：问题、待人工决定的工单、负载与一天的流量 |
 | `src/executor/dsh.ts` | `DshExecutor`、`WorkerSlots`、`ticketExecution`、`inputMessage`、`mandateInstructions`、`workerSessionId` |
@@ -296,6 +298,7 @@ window.__ModuleLoader__.load({ id: "xenra-superagent", factory: (require) => { /
 | `tests/runtime.spec.ts` | 在模拟宿主上的整个应用，经工具与 HTTP |
 | `tests/runtime-concurrency.spec.ts` | 重叠的工作：一轮中到达的触发、送达与启动期间变化的工单 |
 | `tests/tools.spec.ts` | 两套工具的形状、角色限定的资源读取与路由校验 |
+| `tests/proposal-tools.spec.ts` | 立项会话的待立项列表、批量立项/驳回与失败回执 |
 | `tests/http.spec.ts` | 同源与回环检查、每类失败的状态码、请求体上限、路径参数与查询 |
 | `tests/settings.spec.ts` | 与模型或账号检查竞争的保存、策略同步、暂停与拒绝 |
 | `tests/views.spec.ts` | 视图从 Store 推导出的内容 |

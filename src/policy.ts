@@ -86,6 +86,10 @@ export const EvalConfigSchema = z.object({
   mode: z.enum(['off', 'observe', 'auto']).default('observe'),
   timeoutSeconds: z.number().int().min(LIMITS.evalTimeoutSeconds.min).max(LIMITS.evalTimeoutSeconds.max).default(120),
   model: RoleModelSchema.nullable().default(null),
+  /** Skip the review gate: admitted Triggers queue for Eval immediately. Off by default, so a person decides first. */
+  autoReview: z.boolean().default(false),
+  /** Skip the ticket gate: an accept creates its Ticket immediately. Off by default, so a person decides first. */
+  autoTicket: z.boolean().default(false),
 }).strict()
 const CommandNameSchema = z.string().regex(/^[A-Za-z0-9._-]+$/).refine(name => name !== '.' && name !== '..', 'Not a command name')
   .refine(name => !WORKER_COMMANDS.includes(name), `${WORKER_COMMANDS.join(', ')} cannot be blocked`)
@@ -192,6 +196,7 @@ export function settingsPolicy(settings: Settings, sources: SourceScope): Policy
   }
   return {
     version, paused: settings.paused, evalTimeoutMs: settings.eval.timeoutSeconds * 1000,
+    reviewGate: !settings.eval.autoReview, ticketGate: !settings.eval.autoTicket,
     gate(trigger: Trigger, thread, tickets) {
       if (!trigger.human) return machineGate(trigger)
       // The workbench is the local operator's own console, typed into by whoever is at this machine. There is no outside

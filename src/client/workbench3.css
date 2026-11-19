@@ -213,8 +213,8 @@
 .wb3 .mini-tag.amber{color:var(--warn);border-color:rgba(245,165,36,.4)}
 
 /* 评审选择门 */
-.wb3 .gate-box{border:1px solid var(--line);border-radius:12px;background:var(--panel-2);padding:14px}
-.wb3 .gate-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:12px}
+.wb3 .gate-box{border:1px solid var(--line);border-radius:12px;background:var(--panel-2);padding:14px;margin-bottom:14px}
+.wb3 .gate-head{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 14px;margin-bottom:12px}
 .wb3 .gate-head strong{font-size:13px}
 .wb3 .gate-head .meta,.wb3 .gate-foot .meta{font-size:11px;color:var(--ink-3);margin-top:3px}
 .wb3 .gate-count{margin-left:auto;white-space:nowrap;font-size:11px;color:var(--ink-3)}
@@ -247,13 +247,6 @@
 .wb3 .ticket-strip-cards{display:flex;gap:10px;overflow-x:auto;flex:1}
 .wb3 .tk-card{display:flex;align-items:center;gap:9px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;
   background:var(--panel-2);min-width:210px}
-/* 阶段演示切换器（与只读工单卡分开） */
-.wb3 .phase-switch{display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:flex-start;margin-bottom:12px}
-.wb3 .phase-label{font-size:11px;color:var(--ink-3);margin-right:4px}
-.wb3 .phase-btn{padding:4px 9px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--ink-3);
-  font-size:10px;cursor:pointer;white-space:nowrap}
-.wb3 .phase-btn:hover{border-color:var(--accent);color:var(--ink-2)}
-.wb3 .phase-btn.on{border-color:var(--accent);color:var(--ink);background:rgba(0,0,0,.06)}
 .wb3 .tk-card.on{border-color:var(--accent);box-shadow:0 0 0 2px rgba(0,0,0,.12)}
 .wb3 .tk-card .tk-id{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;color:var(--ink-3)}
 .wb3 .tk-card .tk-main{flex:1;min-width:0}
@@ -261,48 +254,6 @@
 .wb3 .tk-card .mini-tag{font-size:10px}
 .wb3 .tk-card.tk-next{opacity:.7;border-style:dashed}
 
-/* 派工看板：一条泳道 + 四节点 + 阶段驱动流动线 */
-.wb3 .editbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 2px 14px}
-.wb3 .editbar .badge{background:rgba(0,0,0,.06);border:1px solid rgba(0,0,0,.12);color:var(--ink);padding:2px 9px;border-radius:999px;font-size:11px;margin-right:6px}
-.wb3 .btn{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;color:var(--ink-2);padding:5px 11px;font-size:12px;cursor:pointer}
-.wb3 .btn:hover{border-color:var(--accent);color:var(--ink)}
-.wb3 .btn.on{border-color:var(--accent);background:rgba(0,0,0,.08);color:var(--ink)}
-.wb3 .dash{overflow-x:auto;padding:6px 2px 2px}
-.wb3 .lane{position:relative;min-width:1080px;display:grid;grid-template-columns:repeat(4,1fr);column-gap:100px;align-items:center;
-  padding:28px 20px;border:1px solid var(--line);border-radius:16px;background:rgba(0,0,0,.02)}
-.wb3 .links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;overflow:visible}
-.wb3 .links .idle-line{stroke:var(--line);stroke-width:2.5;fill:none}
-.wb3 .links .base{stroke-width:2.5;fill:none;opacity:.3}
-.wb3 .links .dash{stroke-width:3;fill:none;stroke-dasharray:10 8;animation:dashflow .6s linear infinite}
-.wb3 .links .dash.rev{animation:dashrev .6s linear infinite}
-@keyframes dashflow{to{stroke-dashoffset:-36}}
-@keyframes dashrev{to{stroke-dashoffset:36}}
-.wb3 .node{position:relative;z-index:1;background:#ffffff;border:1px solid var(--line);border-radius:11px;padding:11px 12px;
-  box-shadow:0 6px 18px rgba(0,0,0,.12);min-height:136px;transition:box-shadow .2s}
-.wb3 .node.main{border-color:rgba(0,0,0,.55);box-shadow:0 0 0 1px rgba(0,0,0,.08),0 6px 18px rgba(0,0,0,.12)}
-.wb3 .node.review{border-color:rgba(245,165,36,.6);box-shadow:0 0 0 1px rgba(245,165,36,.18),0 6px 18px rgba(0,0,0,.12)}
-.wb3 .node.exec{border-color:rgba(34,193,166,.6);box-shadow:0 0 0 1px rgba(34,193,166,.18),0 6px 18px rgba(0,0,0,.12)}
-.wb3 .node.reply{border-color:rgba(34,193,166,.5);box-shadow:0 0 0 1px rgba(34,193,166,.14),0 6px 18px rgba(0,0,0,.12)}
-.wb3 .node.is-running{box-shadow:0 0 0 2px rgba(0,0,0,.18),0 6px 22px rgba(0,0,0,.16)}
-.wb3 .node.is-running.review{box-shadow:0 0 0 2px rgba(245,165,36,.45),0 6px 22px rgba(0,0,0,.16)}
-.wb3 .node.is-running.exec,.wb3 .node.is-running.reply{box-shadow:0 0 0 2px rgba(34,193,166,.45),0 6px 22px rgba(0,0,0,.16)}
-.wb3 .node .n-head{display:flex;align-items:center;gap:6px;margin-bottom:6px}
-.wb3 .node .n-name{font-size:12px;font-weight:700;flex:1}
-.wb3 .node .n-state{font-size:10px;color:var(--ink-3);display:flex;align-items:center;gap:5px}
-.wb3 .node .n-sub{font-size:11px;color:var(--ink-2);line-height:1.45}
-.wb3 .node .n-meter{height:4px;border-radius:99px;background:#f4f4f5;margin-top:9px;overflow:hidden}
-.wb3 .node .n-meter i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .4s}
-.wb3 .node.review .n-meter i{background:linear-gradient(90deg,#f5a524,#f5c451)}
-.wb3 .node.exec .n-meter i,.wb3 .node.reply .n-meter i{background:linear-gradient(90deg,var(--accent-2),#16a34a)}
-.wb3 .subagents{margin-top:9px;padding-top:8px;border-top:1px dashed var(--line)}
-.wb3 .subagents .sa-label{font-size:10px;color:var(--ink-3);margin-bottom:5px}
-.wb3 .sa{display:flex;align-items:center;gap:6px;padding:4px 6px;margin-top:4px;border:1px solid var(--line);border-radius:6px;background:#ffffff}
-.wb3 .sa .sa-name{font-size:11px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wb3 .sa .sa-sub{font-size:10px;color:var(--ink-3)}
-.wb3 .legend{display:flex;gap:16px;color:var(--ink-3);font-size:11px;margin-top:14px;flex-wrap:wrap}
-.wb3 .legend .seg{display:flex;align-items:center;gap:6px}
-.wb3 .legend .ln{width:24px;height:0;border-top:2px dashed;display:inline-block}
-.wb3 .hintbar{color:var(--ink-3);font-size:11px;margin-top:10px;line-height:1.6}
 
 /* 配置 */
 .wb3 .config-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;padding:16px;align-items:start}
@@ -362,3 +313,38 @@
 .wb3 .auto-btn.on .auto-btn-state{color:#16a34a}
 .wb3 .foot{color:var(--ink-3);font-size:12px;margin-top:18px;text-align:center}
 @media(max-width:900px){.config-grid{grid-template-columns:1fr}.mini-grid{grid-template-columns:1fr}.compose-row{flex-direction:column}.compose .submit{align-self:auto;padding:10px}}
+
+/* 真实派工链路：一条可横向滚动的活动链，节点数量由 ticket.assignments 决定 */
+.wb3 .assign-wrap{padding:14px 16px 16px}
+.wb3 .assign-head{display:flex;align-items:center;gap:10px;font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:12px;flex-wrap:wrap}
+.wb3 .assign-head .mono{margin-left:auto;font-weight:400;color:var(--ink-3);font-size:11px}
+.wb3 .assign-lane{display:flex;gap:12px;overflow-x:auto;padding:2px 2px 6px}
+.wb3 .assign-node{flex:0 0 240px;border:1px solid var(--line);border-radius:11px;background:#fff;padding:10px 12px;min-height:112px;box-shadow:0 6px 18px rgba(0,0,0,.08)}
+.wb3 .assign-node.is-running{border-color:rgba(34,193,166,.55);box-shadow:0 0 0 2px rgba(34,193,166,.16),0 6px 18px rgba(0,0,0,.1)}
+.wb3 .assign-node.is-ended{opacity:.92}
+.wb3 .assign-node.is-pending{opacity:.72;border-style:dashed}
+.wb3 .assign-top{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.wb3 .assign-no{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;background:rgba(0,0,0,.06);font-size:10px;color:var(--ink-2)}
+.wb3 .assign-name{font-size:12px;font-weight:700;flex:1}
+.wb3 .assign-meta{display:flex;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--ink-3)}
+.wb3 .assign-report{display:flex;align-items:flex-start;gap:6px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font-size:11px;line-height:1.45;color:var(--ink-2)}
+.wb3 .assign-report.empty{color:var(--ink-3)}
+.wb3 .assign-empty{padding:22px;text-align:center;color:var(--ink-3);font-size:12px;border:1px dashed var(--line);border-radius:10px;background:rgba(0,0,0,.02)}
+.wb3 .assign-foot{margin-top:12px;font-size:10px;color:var(--ink-3)}
+.wb3 .tk-card{color:var(--ink);text-align:left;cursor:pointer}
+.wb3 .tk-card:hover{border-color:var(--accent)}
+
+/* 阶段真实状态的颜色 */
+.wb3 .stage-state.state-error{color:var(--error);font-weight:700}
+.wb3 .stage-state.state-ongoing{color:var(--ink-2)}
+.wb3 .stage-state.state-done{color:var(--done)}
+
+/* 模型抽屉里复用设置页的字段控件 */
+.wb3 .cfg .dt-field{display:block;padding:0}
+.wb3 .cfg .dt-model .dt-grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.wb3 .cfg .dt-field-head{display:block;font-size:11px;color:var(--ink-3);margin-bottom:4px}
+.wb3 .cfg .dt-field input{width:100%}
+.wb3 .cfg .dt-model .dt-grid3{width:100%}
+.wb3 .model-route{font-size:11px;color:var(--ink-3);margin-top:8px;line-height:1.5}
+.wb3 .model-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.wb3 .model-role .path-browse{margin-top:10px}

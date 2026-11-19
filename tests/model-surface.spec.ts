@@ -131,7 +131,7 @@ async function start() {
   const ctx = new Context()
   const history = { read: async () => ({ events: [] }), [Symbol.asyncDispose]: async () => {} }
   const services = { agents, llm: { resolveCallConfig: async (value: unknown) => value },
-    workspaceRegistry: { create: async (cwd: string) => ({ id: cwd }) },
+    workspaceRegistry: { create: async (cwd: string) => ({ id: cwd, path: cwd, attachSession: async () => {} }) },
     sessionController: { create, resolveAgent, selectModel: async () => {}, rename: async () => {}, inspect: async () => ({ events: [] }) },
     sessionPersistence: { flush: async () => {}, open: async () => history }, permissionPresets: { set: () => {} }, subprocess,
     webServer: { host: '127.0.0.1', port: 3082, register: () => () => {} } }
@@ -146,7 +146,7 @@ async function start() {
   const settings = runtime.store.settings()
   const allowed = { feishu: { allowed: [{ id: MEMBER, name: 'Alice' }], syncChat: CHAT }, github: { allowed: [{ id: 'alice' }] } }
   const feishuSource = { enabled: true, config: { cli: BOT, chats: [{ chatId: CHAT, listen: 'all' }], directMessages: true } }
-  runtime.store.saveSettings({ ...settings, policy: { ...settings.policy, sources: allowed }, eval: { ...settings.eval, mode: 'auto' },
+  runtime.store.saveSettings({ ...settings, policy: { ...settings.policy, sources: allowed }, eval: { ...settings.eval, mode: 'auto', autoReview: true, autoTicket: true },
     sources: { ...settings.sources, feishu: feishuSource } })
   const run = async (sessionId: string, name: string, args: unknown) =>
     await tools.get(sessionId)!.get(name)!.execute(args, { signal: new AbortController().signal }) as Record<string, unknown>

@@ -1,19 +1,20 @@
 /** Lifecycle, prompt/tool/skill decoration, message delivery, and budget retry tracking for orchestrator and worker DSH sessions. */
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { MessageId } from '@deepseek-ai/dsh-llm'
 import { scopeParentOf } from '@deepseek-ai/dsh-scope'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 import { key, liveTicket, type Ticket } from '../core/index.ts'
-import { mandateInstructions, ticketOfSession } from '../executor/dsh.ts'
+import { mandateInstructions, ticketOfSession, workerSessionId } from '../executor/dsh.ts'
 import type { HealthEntry } from '../infra/health.ts'
 import { AgentDelivery, messageId } from './delivery.ts'
 import type { Effects } from './effects.ts'
 import type { Variable } from './execution-environment.ts'
-import { RetryHealth } from './retry-health.ts'
-import { initializeRoleModel } from './role-models.ts'
+import { RetryHealth, type RetryHealthEvent } from './retry-health.ts'
+import { applyRoleModel, initializeRoleModel } from './role-models.ts'
+import type { RoleModel } from '../policy.ts'
 import { bundledSkills } from './skill-files.ts'
 import { SKILL_PREFIX, type PromptVersion, type Prompts } from './prompts.ts'
 import type { Store } from './store.ts'
@@ -30,12 +31,14 @@ export interface SessionsHost {
   /** The `models` health entry, which reports managed sessions waiting on a model-budget retry. */
   readonly health: HealthEntry
   readonly masterId: string
+  /** The separate Session that owns the proposal gate; it is not the main Session. */
+  readonly proposalId: string
   readonly lifetime: AbortSignal
   closing(): boolean
   /** Execution environment variables for `ticket`, rendered into its worker's system prompt. */
   environment(ticket: Ticket): Variable[]
-  /** Tools to register on the main Session (`ticket === undefined`) or on `ticket`'s worker Session. */
-  tools(agent: Agent, ticket?: Ticket): Tool[]
+  /** Tools to register on the review Session (`ticket === undefined`), the proposal Session (`proposal === true`), or a worker Session. */
+  tools(agent: Agent, ticket?: Ticket, proposal?: boolean): Tool[]
 }
 
 /**
@@ -43,6 +46,8 @@ export interface SessionsHost {
  * its skills are registered in, and the skills of one prompt revision; for a worker's subagent, only its tool limits.
  */
 interface SessionBinding { disposers: (() => void)[]; scope?: Context; skills?: { revision: number; dispose: () => void }; subagent?: true }
+/** The last model call failure of one Session, kept so the panel can explain an unavailable Eval instead of showing only `timeout`. */
+export interface ModelFailure { code: string; message: string; at: string }
 
 /** The agent presets Executor Sessions and the main Session are created with, which the bundle's patch defines. */
 export const WORKER_PRESET = 'xenra-superagent-worker', ROUTER_PRESET = 'xenra-superagent-router'
@@ -66,6 +71,19 @@ const WORK_TOOLS = ['read', 'write', 'edit', 'read_image', 'glob', 'grep', 'bash
  * it gets no write or edit tool, no shell and no web tool. Each name the profile actually registers is kept (`mainOnly`).
  */
 const MAIN_TOOLS = ['skill', 'read', 'read_image', 'job_output', 'job_list', 'job_kill']
+/**
+ * A proposal Session only reads the gate and decides it. It gets no write, shell, source or settings tool; `proposalTools`
+ * adds the gate tools, and the preset's read-only tools remain available for the Session's own explanation.
+ */
+const PROPOSAL_TOOLS = ['read', 'read_image', 'job_output', 'job_list', 'job_kill', 'proposal_list', 'proposal_decide']
+/** The proposal Session's role text: the second gate, and nothing after it. */
+const PROPOSAL_PROMPT = [
+  'You are the Xenra-SuperAgent proposal Session, a separate DSH conversation window from the review Session.',
+  'Your only job is the second human gate: pending proposals that passed review and would create a ticket if approved.',
+  'Use proposal_list to read the real pending queue, then proposal_decide with action approve or reject only when the person explicitly asks.',
+  'Approving creates the ticket and schedules dispatch; rejecting creates no ticket and starts no worker. Never write code, edit files, run shell commands, change settings, or dispatch a worker yourself.',
+  'Default to human approval: when the person has not explicitly chosen, leave the proposal pending and explain the choice.',
+].join('\n')
 /** What the main Session is told when it would wait: what it waits for comes to it, and a waiting step holds back the next. */
 const NO_WAIT = 'Reports, follow_up notices, new candidates and a background job\'s end with its output arrive by themselves as messages; '
   + 'end the turn instead of waiting for them.'
@@ -101,6 +119,8 @@ export class Sessions {
   /** Decorated agents mapped to their registered disposers and skill scope until the agent is disposed or `Sessions.dispose()` runs. */
   private readonly bindings = new Map<Agent, SessionBinding>()
   private readonly retryHealth = new RetryHealth()
+  /** Last model failure per managed Session, cleared by the next successful model message. */
+  private readonly modelFailures = new Map<string, ModelFailure>()
   private readonly ctx: Context
   /** Registers ordered `relay` and `notice` effect handlers that deliver to the main Session. */
   constructor(private readonly host: SessionsHost) {
@@ -122,6 +142,7 @@ export class Sessions {
       const binding = agent && agent.session === session ? this.bindings.get(agent) : undefined
       if (!agent || !binding || binding.subagent) return
       this.retryHealth.observe(agent.id, event)
+      this.observeModelFailure(agent.id, event)
       this.updateModelHealth()
     })
     ctx.on('agent/created', async ({ agent }) => { await this.decorate(agent); return undefined })
@@ -130,7 +151,8 @@ export class Sessions {
     ctx.inject(['agentPresets'], child => {
       child.on('agent-preset/selected', (sessionId, preset) => {
         const ticketId = ticketOfSession(sessionId), agent = ctx.agents.get(sessionId as SessionId)
-        const ours = sessionId === this.host.masterId ? ROUTER_PRESET : ticketId && this.host.store.tickets.get(ticketId) ? WORKER_PRESET : undefined
+        const ours = sessionId === this.host.masterId || sessionId === this.host.proposalId ? ROUTER_PRESET
+          : ticketId && this.host.store.tickets.get(ticketId) ? WORKER_PRESET : undefined
         if (!ours || preset === ours || !agent) return
         const presets = child.get('agentPresets') as { select(agent: Agent, preset: string): Promise<string> }
         presets.select(agent, ours).catch(() => {})
@@ -139,19 +161,34 @@ export class Sessions {
     ctx.on('agent/status', ({ agent, status }) => {
       if (status === 'idle' && !this.host.closing()) { this.retryHealth.clear(agent.id); this.updateModelHealth() }
     })
+    // A plugin reload or DSH restart replaces this plugin's fiber while Session agents stay loaded. Decorations are
+    // fiber-local, so the existing workers would lose their acknowledgement, report and thread tools until recreated.
+    for (const ticket of this.host.store.tickets.list()) {
+      const agent = ctx.agents.get(workerSessionId(ticket.id) as SessionId)
+      if (agent) void this.decorate(agent).catch(error => {
+        this.ctx.logger.warn('xenra-superagent could not redecorate worker %s: %s', ticket.id, String(error))
+      })
+    }
   }
   /** Resolves or creates session `id` in workspace `cwd`, initializes its role model, decorates it with prompts/skills/tools, sets `danger-full-access` permissions, and renames it to `title`. */
-  async ensure(id: string, cwd: string, title: string, role: 'orchestrator' | 'worker'): Promise<Agent> {
+  async ensure(id: string, cwd: string, title: string, role: 'orchestrator' | 'proposal' | 'worker'): Promise<Agent> {
     const ctx = this.ctx
+    // Reuse the Workspace for this directory even when the Session already exists, so a Session created before its
+    // Workspace was registered (or one whose Workspace registration was removed) can be attached again instead of
+    // staying in DSH's Ungrouped bucket forever.
+    const workspace = await ctx.workspaceRegistry.create(cwd)
     let result = await ctx.sessionController.resolveAgent(id as SessionId)
     if ('error' in result && result.error.code === 'session/not-found') {
-      const workspace = await ctx.workspaceRegistry.create(cwd)
       // A Session keeps the preset it was created with, one of the bundle's own (cordis.patch.yml).
       await ctx.sessionController.create({ sessionId: id as SessionId, workspaceId: workspace.id,
         agentPreset: role === 'worker' ? WORKER_PRESET : ROUTER_PRESET })
       result = await ctx.sessionController.resolveAgent(id as SessionId)
     }
     if ('error' in result) throw result.error
+    // Creating a Session already attaches it; attach is idempotent, and for an existing one this repairs the group.
+    await workspace.attachSession(id as SessionId).catch(error => {
+      ctx.logger.warn('xenra-superagent could not attach session %s to workspace %s: %s', id, workspace.path, String(error))
+    })
     const settings = this.host.store.settings()
     await initializeRoleModel(ctx, result.agent, role === 'orchestrator' ? settings.eval.model : settings.executor.model)
     await this.decorate(result.agent)
@@ -169,6 +206,9 @@ export class Sessions {
     accepted?: () => void): Promise<void> {
     const result = await this.ctx.sessionController.resolveAgent(sessionId as SessionId)
     if ('error' in result) throw result.error
+    // A resumed Session (plug-in reload or DSH restart) is not necessarily announced through `agent/created`, so its
+    // decorations, including the acknowledgement and report tools, must be restored before the next input arrives.
+    await this.decorate(result.agent)
     await this.agentDelivery.send(result.agent, key(requestId), text, mode, this.host.lifetime, authorize, accepted)
   }
   /** The id of the message `prompt` delivers under `requestId`, which DSH's inbox events name it by. */
@@ -220,10 +260,77 @@ export class Sessions {
         execute: (args, execution) => execute(schema.parse(args), execution.signal) }))
     }
   }
+  /** Latest model failure of `sessionId` (the main Session by default); an unavailable Eval explains which error preceded its timeout. */
+  modelFailure(sessionId = this.host.masterId): ModelFailure | undefined {
+    const failure = this.modelFailures.get(sessionId)
+    return failure ? { ...failure } : undefined
+  }
+  /** The model route the Session will use for its next step, or `undefined` before its first request. */
+  modelOf(sessionId = this.host.masterId): ModelSelection | undefined {
+    return this.ctx.agents.get(sessionId as SessionId)?.model.current()
+  }
+  /** Whether DSH's workspace registry has archived this managed Session; an archived Session cannot run a model step. */
+  archived(sessionId = this.host.masterId): boolean {
+    return this.ctx.workspaceRegistry?.archivedSessionIds?.includes(sessionId as SessionId) ?? false
+  }
+  /** Restores an archived main Session and clears the failure that kept it visible, so its next candidate can reach the model. */
+  async restore(sessionId = this.host.masterId): Promise<boolean> {
+    if (!this.archived(sessionId)) return false
+    await this.ctx.workspaceRegistry.unarchiveSession(sessionId as SessionId)
+    this.modelFailures.delete(sessionId)
+    return true
+  }
+  /** Records that the main Session is archived, so the panel shows why no model request is being made. */
+  reportArchived(): void {
+    this.modelFailures.set(this.host.masterId, { code: 'ARCHIVED',
+      message: '主 Session 已在 DSH 中归档；撤销归档后它才能调用模型。', at: new Date().toISOString() })
+  }
+  /** Re-select the configured model on the main Session, applying a saved setting without recreating the Session. */
+  async reconfigureModel(model: RoleModel): Promise<ModelSelection> {
+    const result = await this.ctx.sessionController.resolveAgent(this.host.masterId as SessionId)
+    if ('error' in result) throw result.error
+    try { return await applyRoleModel(this.ctx, result.agent, model) }
+    catch (error) {
+      // A saved route that the live provider cannot resolve stays visible as a model failure instead of only a log line.
+      this.modelFailures.set(this.host.masterId, { code: 'CONFIG',
+        message: (error instanceof Error ? error.message : String(error)).slice(0, 300), at: new Date().toISOString() })
+      throw error
+    }
+  }
   /** Returns `sessionId`'s active model-budget retry state (`{ model_retry }`) for status listings, or `{}` when not waiting on one. */
   modelRetry(sessionId: string | undefined) {
     const retry = sessionId ? this.retryHealth.get(sessionId) : undefined
     return retry ? { model_retry: retry } : {}
+  }
+  /** Tracks the last model failure of a managed Session; a successful, non-interrupted model message clears it. */
+  private observeModelFailure(sessionId: string, event: RetryHealthEvent): void {
+    const data = event.data as { failure?: unknown; message?: unknown; interrupted?: unknown } | undefined
+    if (event.type === 'llm/retry') {
+      const failure = data?.failure && typeof data.failure === 'object' ? data.failure as Record<string, unknown> : undefined
+      if (!failure) return
+      const status = typeof failure.status === 'number' ? failure.status : undefined
+      const code = typeof failure.code === 'string' && failure.code ? failure.code
+        : status === 401 || status === 403 ? 'AUTH' : status === 429 ? 'RATE_LIMIT' : 'ERROR'
+      const outer = typeof failure.message === 'string' ? failure.message.slice(0, 8192) : ''
+      // Provider errors arrive as "<status>: {json}"; show the inner message so the panel reads like the error itself.
+      let message = outer.replace(/^\d{3}:\s*/, '')
+      try {
+        const body = JSON.parse(message) as { message?: unknown }
+        if (typeof body.message === 'string') message = body.message
+      } catch { /* Not JSON: keep the provider text. */ }
+      this.modelFailures.set(sessionId, { code, message: message.slice(0, 300), at: new Date(event.time).toISOString() })
+      return
+    }
+    if (event.type === 'turn/end') {
+      const reason = (data as { reason?: { kind?: string } } | undefined)?.reason
+      // A blocked turn is DSH's archived-session gate: no request is made, so the panel must not present it as a model timeout.
+      if (reason?.kind === 'blocked' && this.archived(sessionId)) this.reportArchived()
+      return
+    }
+    if (event.type === 'assistant/message' && data?.interrupted !== true) {
+      const source = (data?.message as { source?: { kind?: string } } | undefined)?.source
+      if (source?.kind === 'model') this.modelFailures.delete(sessionId)
+    }
   }
   private updateModelHealth(): void {
     const retries = this.retryHealth.list()
@@ -238,21 +345,32 @@ export class Sessions {
   private async decorate(agent: Agent): Promise<void> {
     if (this.bindings.has(agent)) return
     const host = this.host
-    const master = agent.id === host.masterId
-    const ticket = master ? undefined : this.ticketOf(agent)
-    if (!master && !ticket) { this.limitSubagent(agent); return }
+    const review = agent.id === host.masterId
+    const proposal = agent.id === host.proposalId
+    const ticket = review || proposal ? undefined : this.ticketOf(agent)
+    if (!review && !proposal && !ticket) { this.limitSubagent(agent); return }
     const binding: SessionBinding = { disposers: [] }
     this.bindings.set(agent, binding)
     this.retryHealth.restore(agent.id, agent.session.snapshotEvents())
     if (agent.status === 'idle') this.retryHealth.clear(agent.id)
     this.updateModelHealth()
+    // The proposal Session is a small, separate conversation window: it gets its own short role text and only the gate
+    // tools. It never receives the main routing prompt, so a review instruction cannot leak into an approval.
+    if (proposal) {
+      binding.disposers.push(agent.ctx.systemPrompt.section({ name: 'xenra-superagent-proposal', order: 9999,
+        interpolate: false, complete: true, text: () => PROPOSAL_PROMPT }))
+      const register = this.registerTool(agent, binding)
+      for (const tool of host.tools(agent, undefined, true)) register(tool.name, tool.description, tool.schema, tool.execute)
+      binding.disposers.push(this.proposalOnly(agent))
+      return
+    }
     // Disable variable interpolation so literal ${{ ... }} expressions in team prompts are preserved.
     binding.disposers.push(agent.ctx.systemPrompt.section({ name: 'xenra-superagent-policy', order: 9999, interpolate: false, text: context => {
       const version = this.promptFor(agent, context.signal !== undefined)
       const current = ticket && host.store.tickets.get(ticket.id)
-      const composed = host.prompts.compose(version.config, master ? 'orchestrator' : 'worker', current ? host.environment(current) : undefined)
+      const composed = host.prompts.compose(version.config, review ? 'orchestrator' : 'worker', current ? host.environment(current) : undefined)
       return `[xenra-superagent prompt revision ${version.revision}]\n${composed}\n${current ? mandateInstructions(current.mandate) : ''}`
-    }, ...(master ? { complete: true } : {}) }))
+    }, ...(review ? { complete: true } : {}) }))
     // A recreated skill scope (e.g. after the skills service restarts) starts empty, so reset `binding.skills` before rebinding.
     const skillScope = agent.ctx.inject(['skills'], scope => {
       binding.scope = scope
@@ -265,7 +383,7 @@ export class Sessions {
     if (this.bindings.get(agent) !== binding) return
     const register = this.registerTool(agent, binding)
     for (const tool of host.tools(agent, ticket)) register(tool.name, tool.description, tool.schema, tool.execute)
-    if (master) {
+    if (review) {
       binding.disposers.push(this.mainOnly(agent),
         agent.ctx.tools.guard(execution => noWait(execution, () => this.routed(agent))))
     } else {
@@ -293,9 +411,38 @@ export class Sessions {
    * job tools has none of them.
    */
   private mainOnly(agent: Agent): () => void {
+    return this.restrictWhenReady(agent, MAIN_TOOLS)
+  }
+  /** The proposal Session keeps the gate tools plus read-only inspection, and no tool that changes the world. */
+  private proposalOnly(agent: Agent): () => void {
+    return this.restrictWhenReady(agent, PROPOSAL_TOOLS, true)
+  }
+  /**
+   * Applies a tool mask once the Session's preset tools exist.
+   *
+   * A new Session is decorated while its preset is still mounting, so the work tools are not registered yet. Masking with
+   * the then-empty intersection hides every preset tool for the Session's whole life (only the plugin's own tools stay
+   * visible), which leaves a worker unable to read or run anything. Recompute on `tools/change` until the mask is real.
+   */
+  private restrictWhenReady(agent: Agent, names: readonly string[], includeOwn = false): () => void {
     const parent = scopeParentOf(agent)
-    const allow = MAIN_TOOLS.filter(name => agent.ctx.tools.get(name, parent))
-    return agent.ctx.tools.restrict({ allow })
+    let active: (() => void) | undefined
+    let applied = ''
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const sync = () => {
+      timer = undefined
+      const allow = names.filter(name => agent.ctx.tools.get(name, parent) || (includeOwn && agent.ctx.tools.get(name)))
+      const key = allow.join(',')
+      if (key === applied) return
+      active?.(); active = undefined; applied = key
+      if (allow.length === 0) return
+      active = agent.ctx.tools.restrict({ allow })
+    }
+    const schedule = () => { if (timer === undefined) timer = setTimeout(sync, 0) }
+    sync()
+    const off = this.ctx.on('tools/change', schedule)
+    timer ??= setTimeout(sync, 20)
+    return () => { off(); if (timer !== undefined) clearTimeout(timer); active?.() }
   }
   /**
    * An Executor Session's tools: only the profile's work tools, which DSH requires to be known, and none once its ticket
@@ -305,9 +452,7 @@ export class Sessions {
    */
   private workOnly(agent: Agent, ticketId: string): (() => void)[] {
     const store = this.host.store
-    const parent = scopeParentOf(agent)
-    const allow = WORK_TOOLS.filter(name => agent.ctx.tools.get(name, parent))
-    return [agent.ctx.tools.restrict({ allow }), agent.ctx.tools.guard(() => {
+    return [this.restrictWhenReady(agent, WORK_TOOLS), agent.ctx.tools.guard(() => {
       const current = store.tickets.get(ticketId)
       return !current || !liveTicket(current) ? 'Ticket ended; new work needs a new authorized ticket' : undefined
     })]

@@ -200,6 +200,8 @@ export class Store implements Repositories {
 
   readonly triggers = {
     get: (id: string): Trigger | undefined => { const row = this.db.prepare('SELECT value FROM trigger WHERE id=?').get(id); return row ? JSON.parse(String(row.value)) as Trigger : undefined },
+    /** Recent Triggers newest first, for gate queues and management views. */
+    list: (limit = 200): Trigger[] => this.values('SELECT value FROM trigger ORDER BY at DESC LIMIT ?', limit),
     save: (trigger: Trigger): void => this.atomic(() => {
       this.db.prepare('INSERT INTO trigger VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value, at=excluded.at').run(trigger.id, JSON.stringify(trigger), trigger.at)
       this.indexThreads(trigger)
@@ -244,6 +246,8 @@ export class Store implements Repositories {
     get: (id: string): Decision | undefined => { const row = this.db.prepare('SELECT value FROM decision WHERE id=?').get(id); return row ? JSON.parse(String(row.value)) as Decision : undefined },
     save: (decision: Decision): void => { this.db.prepare('INSERT INTO decision VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value, thread=excluded.thread').run(decision.id, decision.threadKey, JSON.stringify(decision)) },
     byThread: (threadKeyValue: string): Decision[] => this.db.prepare('SELECT value FROM decision WHERE thread=? ORDER BY rowid').all(threadKeyValue).map(row => JSON.parse(String(row.value)) as Decision),
+    /** Accepts waiting at the ticket gate, oldest first so a person works through the queue in arrival order. */
+    proposals: (): Decision[] => this.values("SELECT value FROM decision WHERE value ->> '$.proposal.state' = 'pending' ORDER BY rowid"),
   }
   /** Read-only queries for management views, orchestrator tools, and source polling (see `storeReads`). */
   readonly read: ReturnType<typeof storeReads>

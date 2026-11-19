@@ -71,6 +71,50 @@ function accepted(h: ReturnType<typeof harness>, id = '1', thread = 't1') {
   return decision
 }
 
+describe('manual gates', () => {
+  it('holds an admitted Trigger at the review gate, then queues it only when a person approves', () => {
+    const h = harness({ reviewGate: true })
+    expect(h.engine.receive(trigger('1'))).toBe('stored')
+    expect(h.repo.threads.get('chat:t1')!.pending).toEqual([])
+    expect(h.repo.triggers.disposition('1')).toMatchObject({ review: { state: 'pending' } })
+    expect(h.requests).toEqual([])
+    expect(h.engine.approveReview('1')).toBe(true)
+    expect(h.repo.triggers.disposition('1')!.review).toBeUndefined()
+    expect(h.repo.threads.get('chat:t1')!.pending).toEqual(['1'])
+    h.pump()
+    expect(h.requests).toHaveLength(1)
+  })
+  it('drops a Trigger at the review gate without starting an Eval', () => {
+    const h = harness({ reviewGate: true })
+    h.engine.receive(trigger('1'))
+    expect(h.engine.dropReview('1')).toBe(true)
+    expect(h.repo.triggers.disposition('1')).toMatchObject({ filtered: { code: 'manualDrop' } })
+    expect(h.repo.triggers.disposition('1')!.review).toBeUndefined()
+    expect(h.repo.threads.get('chat:t1')!.pending).toEqual([])
+    expect(h.requests).toEqual([])
+  })
+  it('holds an accept at the ticket gate and creates the Ticket only when a person approves it', () => {
+    const h = harness({ ticketGate: true })
+    h.engine.receive(trigger('1')); h.pump()
+    const decision = h.decide(h.requests[0]!, { kind: 'accept', title: 'Fix', scope: 'small', reason: 'requested', acknowledgement: 'ok' })
+    expect(decision.kind).toBe('accept')
+    expect(decision.ticketId).toBeUndefined()
+    expect(decision.proposal).toMatchObject({ state: 'pending', title: 'Fix' })
+    expect(h.repo.tickets.list()).toEqual([])
+    expect(h.engine.approveProposal(decision.id).ticketId).toBe(key('ticket', decision.evalId))
+    expect(h.repo.tickets.list()).toHaveLength(1)
+    expect(h.repo.decisions.get(decision.id)!.proposal).toMatchObject({ state: 'approved' })
+  })
+  it('rejects an accept at the ticket gate without creating a Ticket', () => {
+    const h = harness({ ticketGate: true })
+    h.engine.receive(trigger('1')); h.pump()
+    const decision = h.decide(h.requests[0]!, { kind: 'accept', title: 'Fix', scope: 'small', reason: 'requested' })
+    h.engine.rejectProposal(decision.id)
+    expect(h.repo.tickets.list()).toEqual([])
+    expect(h.repo.decisions.get(decision.id)!.proposal).toMatchObject({ state: 'rejected' })
+  })
+})
+
 describe('intake', () => {
   it('stores a trigger once and records source filtering', () => {
     const h = harness()

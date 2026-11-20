@@ -36,7 +36,7 @@ it('saves the Eval block on the Eval settings and the Executor with its executio
   await click(find(zh['settingsGroup.execution'], '.dt-settings-link'))
   await type(field<HTMLInputElement>(zh.maxWorkers), '5')
   // An empty root uses the default directory, which the field names instead of looking set.
-  expect(field<HTMLInputElement>(zh.executionDirectory).closest('.dt-field')!.querySelector('small')?.textContent).toBe('留空时用 /srv/xenra-superagent/work')
+  expect(field<HTMLInputElement>(zh.executionDirectory).closest('.dt-field')!.querySelector('small')?.textContent).toBe('留空时每个工单用 /srv/xenra-superagent/work/<短名>')
   await type(field<HTMLInputElement>(zh.executionDirectory), '/srv/work')
   // A variable picked from the list goes where the caret is in the prepare command.
   const prepare = field<HTMLTextAreaElement>(zh.prepareCommand)

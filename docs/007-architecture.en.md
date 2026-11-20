@@ -13,7 +13,7 @@ The code has six layers, and dependencies point one way:
 | Core | `src/core/` | Domain types, ports, the Engine and its five parts; knows nothing of Sources, Policy, assessment or execution | Only itself, plus Node's `node:crypto` |
 | Policy | `src/policy.ts`, `src/admission.ts`, `src/limits.ts` | Settings schemas, the Policy version, the gate, the admission table | Core, `node:` and `zod` |
 | Application | `src/app/` | Composition root, Store, effect queue, Sessions, Executor host, HTTP routes, views, tools | Core, Policy, Executor, Sources, infrastructure |
-| Executor | `src/executor/` | One Session and one directory per Ticket; host events; background jobs and subagents | Core, parts of the application, infrastructure |
+| Executor | `src/executor/` | One Session per Ticket, with a shared or per-ticket workspace; host events; background jobs and subagents | Core, parts of the application, infrastructure |
 | Sources | `src/sources/` | One kind per Source: configuration, Policy part, Channel, thread context, polling loops | Core, infrastructure, `src/deployment.ts`; **not** `src/app/` |
 | Infrastructure | `src/infra/` | CLI transport, process environment and shims, health board, packaged paths, text metrics | No internal dependency |
 | Panel | `src/client/` | The panel that runs in the browser; imports only host-side **types** and a few pure modules | The pure values of `src/core/errors.ts` and `src/core/reasons.ts`, `src/setup.ts`, `src/limits.ts`, `src/admission.ts`, `src/navigation.ts`, `src/sources/host.ts`, and the filter lists and types of `src/app/api.ts` |

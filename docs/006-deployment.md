@@ -41,7 +41,7 @@ bundle 还插入两行 `@deepseek-ai/dsh-agent-preset`，定义本应用自己�
 - `<stateDir>/worker-gitconfig` 只把 github.com 的凭据助手指向智能体的 CLI；它拦的是配置来源，不是进程。
 - **它不会改动你机器上已有的任何 git 配置。** 所有写入都在 `<stateDir>` 里：不改你的全局 `~/.gitconfig`、不改系统级配置、不改任何仓库自己的配置，也不往宿主进程的环境变量里写东西。因此其他主机（例如 codeup、GitLab）的凭据来源照常工作，DSH 里其他会话和你自己的终端也不受影响。
 - 执行器读的是自己那份 `worker-gitconfig`，其中没有把 `[credential] helper` 清空的那一行——清空会把**所有**主机的凭据助手一并清掉。它只重定向 github.com，其他主机仍走机器上原有的助手；同时它不读系统级 git 配置，所以系统级的凭据助手不会在 github.com 上替智能体回答、把运营者本人的 token 交出去。
-- 每个工单的执行目录只按目录分开工作，不隔离权限。
+- 执行目录默认按工单分开；配置执行工作区后所有工单共用同一个目录。两种情况都不隔离权限。
 
 执行器能按路径执行任意程序，也能读运营者的主目录。要真正隔离，请给智能体一个只含它自己凭据的专用操作系统账号。
 
@@ -176,7 +176,7 @@ dsh plugin --profile xenra add "link:$PWD"
 
 三个上限与 `stateDir` 都在 **设置 › 部署** 里改，DeepSeek Harness 的插件管理器打开的是同一个页面。三个上限是易变的，保存后立即生效；`stateDir` 改动后插件会重新挂载，页面会提示这一点，几秒后显示新位置。
 
-配置里出现未知键时插件拒绝启动，日志会点名是哪一个键，并说明旧键搬去了哪里：`repository`、`github` 现在在 GitHub 来源上，`branchPrefix`、`repositoryPath` 在"执行"的 prepare 命令里，`worktreeRoot` 是"执行"的目录根，`blockedCommands` 在"执行"设置里，`author` 是提示词文本。升级前请备份 `stateDir`。
+配置里出现未知键时插件拒绝启动，日志会点名是哪一个键，并说明旧键搬去了哪里：`repository`、`github` 现在在 GitHub 来源上，`branchPrefix`、`repositoryPath` 在"执行"的 prepare 命令里，`worktreeRoot` 是"执行"的执行工作区，`blockedCommands` 在"执行"设置里，`author` 是提示词文本。升级前请备份 `stateDir`。
 
 飞书来源默认启用，不需要改配置文件：它在拿到机器人 CLI 之前一直空闲。装上后在 **设置 → 来源** 的飞书卡片里填上那个 CLI 就生效。只有想彻底不用它时，才需要在同一个文件里关掉：
 
@@ -246,14 +246,14 @@ Check Xenra-SuperAgent: run `scripts/xenra-superagent --profile xenra status` in
 
 2. **评估。** 先是策略，再是评估设置。**策略**：两条示例规则可以改也可以删；在 **在各来源上** 下添加可以发起工作的 GitHub 账号和飞书用户，名单为空时任何请求都成不了工单；准入表按接收范围、发送者是否在名单上、消息是否针对智能体决定强度，见 [002 授权](002-authorization.md)；机器人名单里的机器人只能产生推断候选。使用飞书时，可以从一个群同步名单，在启动时和点 **立即同步** 时执行，同步失败会出现在 `sync:feishu` 下并按分钟到小时退避重试。**评估设置**：接单模式（关闭、仅观察、自动接单）、单次评估时限（30 至 600 秒）和研判模型。
 
-3. **执行。** 目录根、prepare 命令、并发数（1 至 16）和被禁止的命令。要给每个工单一份仓库检出：
+3. **执行。** 执行工作区、prepare 命令、并发数（1 至 16）和被禁止的命令。**执行工作区留空**时，每个工单在 `<stateDir>/work/<短名>` 下有自己的目录，下面的命令给每个工单一份仓库检出；**填了执行工作区**时，所有工单直接在该目录里工作，prepare 只在该目录尚不存在时运行一次，不能再按每个工单建 worktree。
 
    ```sh
    git -C /home/me/src/widgets fetch --no-tags "https://github.com/$XENRA_SUPERAGENT_GITHUB_REPOSITORY.git" "${XENRA_SUPERAGENT_GITHUB_PR_HEAD:-HEAD}:refs/xenra-superagent/$XENRA_SUPERAGENT_TICKET" &&
    git -C /home/me/src/widgets worktree add -b "agent/$XENRA_SUPERAGENT_NAME" "$XENRA_SUPERAGENT_DIR" "refs/xenra-superagent/$XENRA_SUPERAGENT_TICKET"
    ```
 
-   被禁止的命令按名字让执行器里的调用失败，用来挡住你自己账号的 CLI；`gh`、`git`、`lark-cli` 不能禁止。目录根和 prepare 命令只能在面板里改，主 Session 的工具改不动它们。
+   被禁止的命令按名字让执行器里的调用失败，用来挡住你自己账号的 CLI；`gh`、`git`、`lark-cli` 不能禁止。执行工作区和 prepare 命令只能在面板里改，主 Session 的工具改不动它们。
 
 4. **提示词。** 编辑团队小节（沟通方式、工单范围、交付要求）、内置分段和技能。内置分段有默认文本，改过之后会记录它是从哪个版本改的；升级让默认值变了会标为 **默认已更新**。这里改的是智能体被告知什么，不是它被允许做什么：工具权限、准入和账号包装脚本都在别处。
 

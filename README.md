@@ -2,7 +2,7 @@
 
 [English](README.en.md) · 中文
 
-Xenra-SuperAgent 是一个面向单个 GitHub 仓库的主动式编码智能体，以 [DeepSeek Harness](https://www.deepseek.com/harness/) 的 bundle 形式分发。它监听 GitHub，也可以监听飞书（默认启用，填上机器人的 `lark-cli` 即生效）。当获许的人向它请求工作时，它会开一张工单，在属于自己的 DSH 会话和目录里完成，再回到原对话里答复，例如给出一个 Pull Request。Web 面板有工作台、首页、工单、设置四个标签页，工作台可直接对项目提要求；新安装由四步首次配置引导接手，飞书那一步可跳过。每个来源是一张可折叠的卡片，卡片头部就是它自己的状态行。
+Xenra-SuperAgent 是一个面向单个 GitHub 仓库的主动式编码智能体，以 [DeepSeek Harness](https://www.deepseek.com/harness/) 的 bundle 形式分发。它监听 GitHub，也可以监听飞书（默认启用，填上机器人的 `lark-cli` 即生效）。当获许的人向它请求工作时，它会开一张工单，在属于自己的 DSH 会话里完成（执行目录可配置为所有工单共用的工作区），再回到原对话里答复，例如给出一个 Pull Request。Web 面板有工作台、首页、工单、设置四个标签页，工作台可直接对项目提要求；新安装由四步首次配置引导接手，飞书那一步可跳过。每个来源是一张可折叠的卡片，卡片头部就是它自己的状态行。
 
 它不改动机器上已有的任何 git 配置：所有写入都在自己的状态目录里，worker 的 git 环境只交给子进程，不污染其他会话或终端。**卸载时插件会自动清理自己写的文件**（包装脚本、`worker-gitconfig`、数据库），不需要事先进面板操作。插件在 Linux、macOS 与 Windows 上都可用。
 

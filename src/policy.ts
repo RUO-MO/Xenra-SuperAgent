@@ -93,11 +93,11 @@ export const EvalConfigSchema = z.object({
 }).strict()
 const CommandNameSchema = z.string().regex(/^[A-Za-z0-9._-]+$/).refine(name => name !== '.' && name !== '..', 'Not a command name')
   .refine(name => !WORKER_COMMANDS.includes(name), `${WORKER_COMMANDS.join(', ')} cannot be blocked`)
-/** Executor settings: worker model, concurrency, ticket directory root (empty defaults to `<stateDir>/work`), `prepare` command, and blocked commands. */
+/** Executor settings: worker model, concurrency, the shared execution workspace (empty gives each ticket its own directory under `<stateDir>/work`), `prepare` command, and blocked commands. */
 export const ExecutorConfigSchema = z.object({
   model: RoleModelSchema.nullable().default(null),
   maxWorkers: z.number().int().min(LIMITS.maxWorkers.min).max(LIMITS.maxWorkers.max).default(3),
-  directory: z.string().trim().refine(path => path === '' || /^(?:\/|[A-Za-z]:[\\/])/.test(path), 'An absolute path (POSIX or a Windows drive path), or empty for <stateDir>/work').default(''),
+  directory: z.string().trim().refine(path => path === '' || /^(?:\/|[A-Za-z]:[\\/])/.test(path), 'An absolute path (POSIX or a Windows drive path), or empty for per-ticket directories under <stateDir>/work').default(''),
   prepare: z.string().max(LIMITS.prepareCommand).default(''),
   blockedCommands: z.array(CommandNameSchema).default([]),
   /** The places a workbench request may act on; the watched repository stays a single deployment-level fact. */

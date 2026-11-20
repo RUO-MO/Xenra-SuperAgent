@@ -109,7 +109,7 @@ flowchart LR
 | Assignment | 派工 | 一张工单与一个执行器实例的绑定 |
 | Subscription | 订阅 | 工单与线程之间的关系 |
 | Fan-out | 扇出 | 把已订阅线程的触发作为上下文送达工单 |
-| Executor | 执行器 | 运行派工的端口：每张工单一个执行器 Session 和一个目录 |
+| Executor | 执行器 | 运行派工的端口：每张工单一个执行器 Session，工作在执行工作区或它自己的目录 |
 | Execution environment | 执行环境 | 执行器 Session 与准备命令运行的地方：由执行器和来源注册的变量，每个都有键、值和说明 |
 | Report | 报告 | 派工向其工单汇报的状态 |
 | Attention | 待人工决定 | 工单上等待人回答的问题 |

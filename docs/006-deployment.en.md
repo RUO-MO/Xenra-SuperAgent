@@ -41,7 +41,7 @@ Sessions created under either preset run as the operator's OS user and are set t
 - `<stateDir>/worker-gitconfig` points only the github.com credential helper at the agent's CLI; it constrains where configuration comes from, not the process.
 - **It does not change any git configuration your machine already had.** Every write stays inside `<stateDir>`: it does not touch your global `~/.gitconfig`, the system configuration, or any repository's own configuration, and it writes nothing into the host process's environment. Credentials for other hosts — codeup, GitLab, a company mirror — therefore keep working, and so do the other Sessions in DSH and your own terminals.
 - The Executor reads its own `worker-gitconfig`, which carries no empty `[credential] helper` line: emptying that list strips the helper of **every** host at once. It redirects github.com alone and leaves every other host to the helpers the machine already has. It also ignores the system git configuration, so a system-wide helper cannot answer for github.com on the agent's behalf and hand over the operator's own token.
-- A Ticket's execution directory separates Tickets by directory alone; it isolates no permissions.
+- Execution directories separate Tickets by default; with an execution workspace configured, all Tickets share one directory. Neither isolates permissions.
 
 An Executor can run any program by path and read the operator's home directory. For real isolation, give the agent a dedicated OS account holding only its own credentials.
 
@@ -176,7 +176,7 @@ The keys of the `xenra-superagent` row:
 
 The three limits and `stateDir` are all edited under **Settings › Deployment**, which is the same page the DeepSeek Harness plugin manager opens. The limits are volatile and take effect as soon as they are saved; a new `stateDir` remounts the plugin, the page says so, and it shows the new location a few seconds later.
 
-An unknown configuration key stops startup, and the log names it and says where the old key moved: `repository` and `github` are on the GitHub Source now, `branchPrefix` and `repositoryPath` in the prepare command of the Execution settings, `worktreeRoot` is the directory root there, `blockedCommands` in the Execution settings, and `author` is prompt text. Back up `stateDir` before an upgrade.
+An unknown configuration key stops startup, and the log names it and says where the old key moved: `repository` and `github` are on the GitHub Source now, `branchPrefix` and `repositoryPath` in the prepare command of the Execution settings, `worktreeRoot` is the execution workspace there, `blockedCommands` in the Execution settings, and `author` is prompt text. Back up `stateDir` before an upgrade.
 
 The Feishu Source is on by default and needs no configuration file edit: it stays idle until it has a bot CLI. After installing, put that CLI on the Feishu card under **Settings → Sources** and it starts working. Turn it off in the same file only when you do not want it at all:
 
@@ -246,14 +246,14 @@ The panel has four tabs — **Workbench**, **Home**, **Tickets**, **Settings** �
 
 2. **Eval.** Policy first, then the Eval settings. **Policy**: the two example rules can be edited or removed; under **On each Source**, add the GitHub accounts and Feishu users who may originate work, and while a list is empty no request can become a Ticket; the admission table decides strength by receiving scope, whether the sender is on the list, and whether the message addresses the agent, as [002 Authorization](002-authorization.en.md) describes; a bot on the bot list can only produce inferred candidates. With Feishu, the list can be synced from a chat, at startup and on **Sync now**, and a failed sync appears under `sync:feishu` and retries with a backoff from a minute to an hour. **Eval settings**: the accept mode (off, observe, auto), the time limit of one Eval (30 to 600 seconds) and the assessor model.
 
-3. **Execution.** The directory root, the prepare command, the concurrency (1 to 16) and the blocked commands. To give each Ticket a checkout of the repository:
+3. **Execution.** The execution workspace, the prepare command, the concurrency (1 to 16) and the blocked commands. With the **execution workspace empty**, each Ticket gets its own `<stateDir>/work/<short name>` directory, and the command below gives each Ticket a checkout; with an **execution workspace set**, all Tickets work in that directory itself, and prepare runs once only if that directory does not exist yet, so it cannot create a worktree per Ticket.
 
    ```sh
    git -C /home/me/src/widgets fetch --no-tags "https://github.com/$XENRA_SUPERAGENT_GITHUB_REPOSITORY.git" "${XENRA_SUPERAGENT_GITHUB_PR_HEAD:-HEAD}:refs/xenra-superagent/$XENRA_SUPERAGENT_TICKET" &&
    git -C /home/me/src/widgets worktree add -b "agent/$XENRA_SUPERAGENT_NAME" "$XENRA_SUPERAGENT_DIR" "refs/xenra-superagent/$XENRA_SUPERAGENT_TICKET"
    ```
 
-   A blocked command makes calls to that name fail inside the Executor, which keeps your own account's CLI out of reach; `gh`, `git` and `lark-cli` cannot be blocked. The directory root and the prepare command can only be changed in the panel; the main Session's tools cannot change them.
+   A blocked command makes calls to that name fail inside the Executor, which keeps your own account's CLI out of reach; `gh`, `git` and `lark-cli` cannot be blocked. The execution workspace and the prepare command can only be changed in the panel; the main Session's tools cannot change them.
 
 4. **Prompts.** Edit the team sections (communication, Ticket scope, delivery requirements), the built-in parts and the skills. A built-in part has default text, and an edit records which version it was edited from; when an upgrade changes the default it is marked **Default updated**. What changes here is what the agent is told, not what it may do: tool permissions, admission and the account shims live elsewhere.
 

@@ -1,4 +1,4 @@
-/** DSH executor: manages one persistent worker session and workspace directory per ticket. */
+/** DSH executor: manages one persistent worker session per ticket and the workspace it works in. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -119,7 +119,12 @@ export function ticketExecution(ticket: Ticket, outcome: Extract<AssessmentOutco
   const assignment = ticket.mandate.strength === 'inferred' && ruleIds
     ? `Proactively accepted under ${ruleIds.join(', ')}. Scope: ${outcome.scope}.${precedence}${note}`
     : note.trim()
-  return { name, directory: workspace || join(executionRoot(settings, stateDir), name), assignment }
+  // A selected local target wins. Otherwise a configured directory is the one shared workspace: the ticket works in it
+  // directly, so every Ticket's Session reuses the same DSH workspace. Only the default (unconfigured) mode gives each Ticket
+  // its own directory under `<stateDir>/work`.
+  const root = executionRoot(settings, stateDir)
+  const directory = workspace || (settings.executor.directory.trim() ? root : join(root, name))
+  return { name, directory, assignment }
 }
 /** Character limits for inline assignment and trigger text in worker messages; longer text is read via its resource. */
 const ASSIGNMENT_CHARS = 1500, TRIGGER_CHARS = 600
@@ -211,7 +216,8 @@ export class WorkerSlots {
 }
 
 /**
- * Executes ticket assignments in persistent per-ticket DSH worker sessions and isolated workspace directories.
+ * Executes ticket assignments in persistent per-ticket DSH worker sessions. The workspace is the configured shared directory
+ * or a selected target, with per-ticket directories only in the default unconfigured mode.
  * Queues launches and input deliveries through Effects, manages concurrency with WorkerSlots, listens for `agent/status`,
  * `agent/inbox/claimed`, `session/event` and `agent/error` events on the Cordis context, and reports status transitions back to Engine.
  * Runtime, Engine, worker tools, and management routes use this class to prepare, launch, deliver to, stop, and resume ticket assignments.

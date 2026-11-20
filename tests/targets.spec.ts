@@ -45,8 +45,12 @@ it('refuses a path that is relative, is the state directory, or nests inside ano
   expect(targetProblem(TargetSchema.parse(directory('inner', innerRoot)), stateDir, [TargetSchema.parse(outer)]))
     .toContain('Overlaps')
   expect(targetProblem(TargetSchema.parse(outer), stateDir, [])).toBeUndefined()
-  // A repository target carries no path to validate.
+  // A repository target with no root has no path to validate; one that names its local clone is checked the same way.
   expect(targetProblem(TargetSchema.parse(repository('widgets', 'acme/widgets')), stateDir, [])).toBeUndefined()
+  const clone = resolve(tmpdir(), 'xenra-widgets')
+  expect(targetProblem(TargetSchema.parse(repository('widgets', 'acme/widgets', clone)), stateDir, [])).toBeUndefined()
+  expect(targetProblem(TargetSchema.parse(repository('widgets', 'acme/widgets', 'relative/clone')), stateDir, [])).toContain('absolute')
+  expect(targetProblem(TargetSchema.parse(repository('widgets', 'acme/widgets', stateDir)), stateDir, [])).toContain('state directory')
 })
 
 it('derives a stable id from a name, avoiding the ones already taken', () => {

@@ -319,7 +319,7 @@ function routes(runtime: HttpHost): Routes {
       const config = settings.executor.targets
       const id = idFor(input.name || (input.kind === 'repository' ? input.repository : input.root) || '', config.items.map(item => item.id))
       const value = { id, kind: input.kind, name: input.name ?? '',
-        ...input.kind === 'repository' ? { repository: input.repository ?? '', root: '' } : { root: input.root ?? '' } }
+        ...input.kind === 'repository' ? { repository: input.repository ?? '', root: input.root ?? '' } : { root: input.root ?? '' } }
       const parsed = TargetSchema.safeParse(value)
       if (!parsed.success) throw parsed.error
       const problem = targetProblem(parsed.data, runtime.machine.stateDir, config.items)

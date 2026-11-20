@@ -112,7 +112,24 @@ What remains POSIX-only is **`scripts/xenra-superagent`**: it is a Python script
 
 ## Install
 
-Run this once, on a machine that has no `xenra` profile yet:
+Xenra-SuperAgent is a **DSH plugin bundle**, not a standalone application: it has no installer and no daemon of its own. It is a `.tgz` package added to a DSH profile; the `cordis.patch.yml` it contains joins the profile's bundle stack, and DSH starts and stops it from there.
+
+### From a release bundle
+
+On a machine that already has DSH and no `xenra` profile yet:
+
+```sh
+dsh xenra --from-default-profile web --dump-config > /dev/null
+dsh plugin --profile xenra add "https://github.com/RUO-MO/Xenra-SuperAgent/releases/download/v<version>/xenra-superagent-<version>.tgz"
+```
+
+The first command creates `~/.dsh/profiles/xenra` from the DSH Web template; `DSH_HOME` relocates that default directory. Do not run it when the profile already exists. The second installs the release as a dependency of the profile; `dsh plugin add` forwards to pnpm, and the bundle's patch layer joins the composition. Add the machine configuration (next section), then restart the profile so the bundle takes effect.
+
+Upgrade by adding the package of the new version; roll back by adding the package of the old one. A URL dependency does not follow `dsh plugin update` to another version. Neither command touches `stateDir` or the database; if a newer version has already migrated the database, roll back with the backup taken before the upgrade, as described under "Upgrade" below.
+
+### From a checkout (development)
+
+If you are changing this repository, or want the immediate effect of `link:`:
 
 ```sh
 npm install -g @deepseek-ai/dsh@0.2.2-rc.2

@@ -1,0 +1,157 @@
+# Publishes Xenra-SuperAgent as a DSH plugin bundle, not as a standalone app.
+#
+# A tag `vX.Y.Z` packages the repository as the same npm-style tarball that
+# `dsh plugin add` installs into a DSH profile. The release job first proves the
+# package composes in a throwaway profile; only then does it attach the tarball
+# to a GitHub Release. A manual run on a branch builds and checks the package
+# without publishing, so the packaging path can be exercised before a tag.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: package DSH bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Read and check the version
+        id: version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            echo "Branch run for $version; no tag to publish."
+            exit 0
+          fi
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version."
+            exit 1
+          fi
+          # A release must be cut from a commit that already landed on main.
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME points to a commit that is not on main."
+            exit 1
+          fi
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      - name: Verify lib/ matches sources
+        run: |
+          if [ -n "$(git status --porcelain -- lib/)" ]; then
+            echo "::error::lib/ is stale. Run 'pnpm build' and commit the rebuilt lib/."
+            git status --short -- lib/
+            exit 1
+          fi
+      - name: Pack the DSH bundle
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p dist
+          pnpm pack --pack-destination dist
+          tarball="dist/xenra-superagent-${VERSION}.tgz"
+          if [ ! -f "$tarball" ]; then
+            echo "::error::Expected $tarball, found:"
+            ls -la dist
+            exit 1
+          fi
+          echo "TARBALL=$tarball" >> "$GITHUB_ENV"
+          tar -tzf "$tarball" > "$RUNNER_TEMP/contents.txt"
+          # The DSH bundle contract: the manifest and the patch it names,
+          # plus the built entry points the exports resolve to.
+          for path in \
+            package/package.json \
+            package/cordis.patch.yml \
+            package/lib/index.js \
+            package/lib/client.js \
+            package/icon.svg; do
+            if ! grep -qx "$path" "$RUNNER_TEMP/contents.txt"; then
+              echo "::error::$path is missing from the packed bundle."
+              exit 1
+            fi
+          done
+          for dir in prompts skills locale; do
+            if ! grep -q "^package/$dir/" "$RUNNER_TEMP/contents.txt"; then
+              echo "::error::package/$dir/ is missing from the packed bundle."
+              exit 1
+            fi
+          done
+          # Source, tests and installed dependencies stay out of the artifact.
+          if grep -Eq '^package/(src|tests|node_modules)/' "$RUNNER_TEMP/contents.txt"; then
+            echo "::error::The packed bundle contains source, tests or node_modules."
+            exit 1
+          fi
+          tar -xOf "$tarball" package/package.json > "$RUNNER_TEMP/packed-package.json"
+          node -e "const p=require(process.argv[1]); if (!p.dsh?.bundle?.patch) { console.error('package.json in the tarball has no dsh.bundle.patch'); process.exit(1) }" "$RUNNER_TEMP/packed-package.json"
+          sha256sum "$tarball" > dist/SHA256SUMS
+      - name: Compose the bundle in a throwaway DSH profile
+        run: |
+          npm install -g @deepseek-ai/dsh@0.2.2-rc.2
+          mkdir -p "$RUNNER_TEMP/dsh-home"
+          export DSH_HOME="$RUNNER_TEMP/dsh-home"
+          # Create a profile from the shipped Web template, then install the
+          # packed artifact exactly as an operator would.
+          dsh xenra --from-default-profile web --dump-config > /dev/null
+          dsh plugin --profile xenra add "file:$GITHUB_WORKSPACE/$TARBALL"
+          dsh --profile xenra --dump-config > "$RUNNER_TEMP/composed.yml"
+          if ! grep -qi 'xenra-superagent' "$RUNNER_TEMP/composed.yml"; then
+            echo "::error::The DSH bundle did not join the profile composition."
+            cat "$RUNNER_TEMP/composed.yml"
+            exit 1
+          fi
+          dsh plugin --profile xenra list --depth 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-bundle
+          path: |
+            dist/*.tgz
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: publish GitHub Release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dsh-bundle
+          path: dist
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.tgz dist/SHA256SUMS \
+            --verify-tag \
+            --generate-notes \
+            --title "Xenra-SuperAgent $GITHUB_REF_NAME"

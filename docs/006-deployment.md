@@ -112,7 +112,24 @@ bundle 还插入两行 `@deepseek-ai/dsh-agent-preset`，定义本应用自己�
 
 ## 安装
 
-在一台还没有 `xenra` profile 的机器上，执行一次：
+Xenra-SuperAgent 是 **DSH 插件包（bundle）**，不是独立应用：没有单独的安装程序，也没有自己的守护进程。它以一个 `.tgz` 包加进某个 DSH profile，包里的 `cordis.patch.yml` 随包激活，之后由 DSH 启动和停止它。
+
+### 从发布包安装
+
+在一台已经装好 DSH、还没有 `xenra` profile 的机器上：
+
+```sh
+dsh xenra --from-default-profile web --dump-config > /dev/null
+dsh plugin --profile xenra add "https://github.com/RUO-MO/Xenra-SuperAgent/releases/download/v<版本>/xenra-superagent-<版本>.tgz"
+```
+
+第一条从 DSH 的 Web 模板创建 `~/.dsh/profiles/xenra`，`DSH_HOME` 可以改变这个默认目录；profile 已存在时不要运行它。第二条把发布包作为依赖装进 profile，`dsh plugin add` 实际转发给 pnpm，bundle 的补丁层随之加入。装完先补机器配置（下一节），再重启 profile 让 bundle 生效。
+
+升级就是再 `add` 新版本的包，回滚就是再 `add` 旧版本的包：URL 依赖不会因为 `dsh plugin update` 自动换成另一个版本。`stateDir` 与数据库不会被这两条命令改动；如果数据库已经被新版本迁移过，回滚要连同升级前的备份一起回滚，见本文的“升级”一节。
+
+### 从检出安装（开发）
+
+如果你在改这个仓库，或者需要 `link:` 的即时生效：
 
 ```sh
 npm install -g @deepseek-ai/dsh@0.2.2-rc.2
@@ -124,7 +141,7 @@ dsh plugin --profile xenra add "link:$PWD"
 
 第一条装的是满足 `engines.dsh` 的 DeepSeek Harness；换用别的版本也行，但要落在 `^0.2.2-rc.1` 内。
 
-第四条从 DeepSeek Harness 的 Web 模板创建 `~/.dsh/profiles/xenra`，`DSH_HOME` 可以改变这个默认目录。这一条只用于全新安装：profile 已存在时它会替换该 profile 并删掉它的 `cordis.patch.yml`，连同机器配置。升级时不要运行它。
+第四条从 DeepSeek Harness 的 Web 模板创建 `~/.dsh/profiles/xenra`；`DSH_HOME` 可以改变这个默认目录。这一条只用于全新安装：profile 已存在时它会替换该 profile 并删掉它的 `cordis.patch.yml`，连同机器配置。升级时不要运行它。
 
 第五条把本仓库以 `link:` 方式装进那个 profile，这样改动 `src/` 之后重新构建即可生效。也可以走 DeepSeek Harness 的插件管理器装上同一个包，效果一样。仓库里提交了构建产物 `lib/`，所以 `link:` 安装不需要先构建；只有改过 `src/` 之后才要重新运行 `pnpm build`。
 

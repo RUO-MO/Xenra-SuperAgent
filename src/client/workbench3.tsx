@@ -124,7 +124,11 @@ export function Workbench3() {
     if (!text.trim()) return
     void call('POST workbench/requests', { body: { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, actor: actor.trim() || 'operator',
       text: text.trim(), ...(scope.trim() ? { scope: scope.trim() } : {}), ...(target ? { target } : {}) } })
-      .then(() => { setText(''); setScope(''); setSent(true); setTimeout(() => setSent(false), 1600); notify('已进入触达排队') },
+      .then(result => {
+        // A duplicate request id keeps the stored Trigger, but it did not enter the queue again: keep the draft and say why.
+        if (!result.accepted) { notify(`未进入触达排队：${result.reason ?? '请求未被接收'}`); return }
+        setText(''); setScope(''); setSent(true); setTimeout(() => setSent(false), 1600); notify('已进入触达排队')
+      },
         failure => notify(failure instanceof Error ? failure.message : String(failure)))
   }
   return <div className="wb3">
@@ -340,7 +344,12 @@ const REPORT_STATE: Record<string, string> = { progress: '进行中', waiting: '
 function DispatchBoard({ tickets }: { tickets?: ApiResponse<'GET tickets'> }) {
   const { call, navigate } = usePanel()
   const rows = tickets?.items ?? []
-  const current = rows[0], next = rows[1]
+  // `GET tickets` lists by recency, not dispatch order. A running Ticket is what the strip's "当前执行" means; a
+  // queued Ticket is the next start. Falling back to recency would label a Ticket waiting on a person as executing.
+  const running = rows.filter(row => row.stage === 'working' && row.action !== 'queued')
+  const queued = rows.filter(row => row.stage === 'working' && row.action === 'queued')
+  const current = running[0] ?? queued[0]
+  const next = queued.find(row => row.id !== current?.id)
   const { data: detail, error } = usePoll(() => current ? call('GET tickets/:id', { id: current.id }) : Promise.resolve(undefined), [current?.id])
   const assignments = detail?.assignments ?? []
   return <div className="board-panel" style={{ padding: 0 }}>

@@ -3,7 +3,7 @@
 import { expect, it } from 'vitest'
 import { zh } from '../src/client/locales.ts'
 import { usePanel, mount, settle, all, tab, click, type, text } from './fixtures/panel.tsx'
-import { server } from './fixtures/panel-server.ts'
+import { server, ticketSummary } from './fixtures/panel-server.ts'
 
 usePanel()
 
@@ -62,6 +62,30 @@ it('submits a request from the small compose card and clears it', async () => {
     body: expect.objectContaining({ text: 'tidy the headings', actor: 'operator' }) })
   expect(area.value).toBe('')
   expect(text()).toContain('已进入触达排队')
+})
+
+it('keeps the draft and says why when a request is not accepted', async () => {
+  server.workbenchAccepted = false
+  await mount()
+  await click(tab(zh['tab.workbench']))
+  const area = document.querySelector<HTMLTextAreaElement>('.mini-compose textarea')!
+  await type(area, 'tidy the headings')
+  await click(document.querySelector<HTMLButtonElement>('.mini-compose .submit')!)
+  await settle()
+  expect(area.value).toBe('tidy the headings')
+  expect(text()).toContain('未进入触达排队')
+})
+
+it('labels the running ticket as current and the queued one as next, not merely the newest', async () => {
+  server.tickets.open = [
+    ticketSummary({ id: 't-new', title: '等待回答' }, { stage: 'person', action: 'answer' }),
+    ticketSummary({ id: 't1', title: '运行中' }, { stage: 'working' }),
+    ticketSummary({ id: 't-queued', title: '排队中' }, { stage: 'working', action: 'queued' }),
+  ]
+  await mount()
+  await click(tab(zh['tab.workbench']))
+  expect(document.querySelector('.tk-card.on .tk-id')?.textContent).toBe('t1')
+  expect(document.querySelector('.tk-card.tk-next .tk-id')?.textContent).toBe('t-queued')
 })
 
 it('renders the real dispatch lane from the ticket assignments, without the prototype demo phases', async () => {

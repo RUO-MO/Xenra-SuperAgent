@@ -16,6 +16,14 @@ Xenra-SuperAgent 是一个面向单个 GitHub 仓库的主动式编码智能体�
 
 它会一次问一个简短的问题，把完整计划给你看一遍，然后安装并配置好一切。它遵循的是 [SETUP.md](SETUP.md)。
 
+发布版本是 **DSH 插件包**，不是独立应用，也没有自己的安装包或守护进程：它装进一个已有的 DSH profile，由 DSH 加载。已经装好 DSH 的机器可以直接从 Release 安装：
+
+```sh
+dsh plugin --profile xenra add "https://github.com/RUO-MO/Xenra-SuperAgent/releases/download/v<版本>/xenra-superagent-<版本>.tgz"
+```
+
+升级和回滚都是再 `add` 对应版本的包；`stateDir` 与数据库保留，但如果数据库已经被新版本迁移过，回滚要连同升级前的备份一起回滚。不要用 `npm install -g` 安装这个插件本身。
+
 如果你更想自己动手，[docs/006-deployment.md](docs/006-deployment.md) 给出了完整的安装、机器配置、启停与升级步骤。
 
 ## 文档

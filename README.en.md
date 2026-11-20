@@ -16,6 +16,14 @@ Setup has many steps, so an agent does it with you. Ask your coding agent:
 
 It asks one short question at a time, shows the full plan once, and then installs and configures everything. [SETUP.en.md](SETUP.en.md) is what it follows.
 
+A release is a **DSH plugin bundle**, not a standalone application: it has no installer and no daemon of its own. It is installed into an existing DSH profile and loaded by DSH. On a machine that already has DSH, install it from a Release:
+
+```sh
+dsh plugin --profile xenra add "https://github.com/RUO-MO/Xenra-SuperAgent/releases/download/v<version>/xenra-superagent-<version>.tgz"
+```
+
+Upgrade and roll back by adding the package of the version you want; `stateDir` and its database stay in place, but if a newer version has already migrated the database, roll back with the backup taken before the upgrade. Do not install this plugin itself with `npm install -g`.
+
 If you would rather do it yourself, [docs/006-deployment.en.md](docs/006-deployment.en.md) gives the complete install, machine configuration, start/stop and upgrade steps.
 
 ## Documentation

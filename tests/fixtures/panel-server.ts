@@ -96,6 +96,8 @@ export interface PanelServer {
   threadPages: (key: string, query: { before?: string; around?: string }) => ThreadPageView | undefined
   person: TicketRow[]; search: Pick<ApiResponse<'GET search'>, 'items' | 'threads'>; history: HistoryView
   requests: { path: string; method: string; body?: unknown }[]
+  /** Whether `POST workbench/requests` accepts a submission; false models a duplicate request id. */
+  workbenchAccepted: boolean
   /** Requests with undeclared query params or invalid body presence; asserted empty after each test. */
   misuse: string[]
   queued: Set<string>
@@ -271,6 +273,8 @@ function initial(): PanelServer {
   const defaults = { revision: 0, previousRevision: null, savedAt: '', source: 'defaults' }
   return {
     health: {}, down: false, pending: 0, opened: [], requests: [], misuse: [], queued: new Set(), dropped: [], failing: [],
+    /** Whether `POST workbench/requests` accepts a submission; false models a duplicate request id. */
+    workbenchAccepted: true,
     // One watched repository target and one local folder, so a test can tell the two kinds apart in the picker.
     targets: [
       { id: 'widgets', kind: 'repository' as const, name: 'widgets', repository: 'acme/widgets', root: '' },
@@ -391,7 +395,8 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
     if (server.gitUpgrade) return server.gitUpgrade(answer)
     return answer } },
   // A workbench request is turned into a Trigger; the panel never opens a Ticket itself.
-  'POST workbench/requests': { body: true, answer: ({ body }) => ({ accepted: true, triggerId: `workbench:${String(body.id)}`,
+  'POST workbench/requests': { body: true, answer: ({ body }) => ({ accepted: server.workbenchAccepted, ...server.workbenchAccepted ? {} : { reason: 'duplicate' },
+    triggerId: `workbench:${String(body.id)}`,
     target: { id: String(body.target ?? 'acme'), kind: 'repository' as const } }) },
   // The update check: whether the installed copy is behind what its own upstream has.
   'GET update': { answer: () => server.update ?? { kind: 'linked' as const, spec: 'link:/srv/xenra-superagent',

@@ -78,16 +78,20 @@ export function idFor(name: string, taken: readonly string[]): string {
  * @returns a problem message, or undefined when the target is usable.
  */
 export function targetProblem(target: Target, stateDir: string, others: readonly Target[]): string | undefined {
-  if (target.kind === 'directory') {
-    if (!isAbsolute(target.root)) return 'The path must be absolute'
-    const root = resolve(target.root)
-    // The agent must not be pointed at its own database, and two targets must not cover the same files by nesting.
-    if (sameOrInside(stateDir, root)) return 'The state directory and its parents cannot be a target'
-    for (const other of others) {
-      if (other.id === target.id || other.kind !== 'directory') continue
-      const otherRoot = resolve(other.root)
-      if (sameOrInside(otherRoot, root) || sameOrInside(root, otherRoot)) return `Overlaps the target ${other.id}`
-    }
+  // A repository target may omit its root (the prepare command creates a fresh checkout); either kind's root is the
+  // workspace workers run in when it is present.
+  const value = target.root.trim()
+  if (!value) return undefined
+  if (!isAbsolute(value)) return 'The path must be absolute'
+  const root = resolve(value)
+  // The agent must not be pointed at its own database, and two targets must not cover the same files by nesting.
+  if (sameOrInside(stateDir, root)) return 'The state directory and its parents cannot be a target'
+  for (const other of others) {
+    if (other.id === target.id) continue
+    const otherValue = other.root.trim()
+    if (!otherValue || !isAbsolute(otherValue)) continue
+    const otherRoot = resolve(otherValue)
+    if (sameOrInside(otherRoot, root) || sameOrInside(root, otherRoot)) return `Overlaps the target ${other.id}`
   }
   return undefined
 }

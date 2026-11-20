@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { latestAssignment, waitsForPerson, type Ticket, type Trigger } from '../src/core/index.ts'
 import { Later } from '../src/app/effects.ts'
 import { reportRelay } from '../src/app/notices.ts'
-import { WorkerSlots, inputMessage, mandateInstructions, ticketExecution, transient, triggerMessage } from '../src/executor/dsh.ts'
+import { WorkerSlots, inputMessage, mandateInstructions, targetWorkspace, ticketExecution, transient, triggerMessage } from '../src/executor/dsh.ts'
 import { SettingsSchema } from '../src/policy.ts'
 import { Commands } from '../src/infra/commands.ts'
 import { shellCommand } from '../src/infra/platform.ts'
@@ -903,6 +903,32 @@ describe('the Executor\'s parts', () => {
     expect(execution.assignment).not.toContain(mandateInstructions(ticket.mandate))
     expect(execution.assignment).toContain('- Copy fixes (copy): Fix typos only.')
     expect(mandateInstructions({ strength: 'explicit' })).toBe('')
+  })
+  it('uses the chosen local folder target itself instead of opening a ticket subdirectory', () => {
+    const settings = SettingsSchema.parse({ executor: { targets: { items: [
+      { id: 'xsa', kind: 'directory', name: 'XSA', root: '/work/xsa' },
+    ], selected: 'xsa' } } })
+    const trigger = { source: 'workbench', meta: { target: 'xsa' } } as unknown as Trigger
+    const ticket = { id: 'ticket-0123456789abcdef', origin: { triggerId: 'tr1', triggerIds: [] },
+      mandate: { strength: 'explicit', policyVersion: 'v1', basis: {}, actor: { source: 'workbench', id: 'alice' }, scope: '' } } as unknown as Ticket
+    expect(targetWorkspace(trigger, settings)).toBe('/work/xsa')
+    const execution = ticketExecution(ticket, { kind: 'accept', title: 'Fix', scope: 'the typo', reason: 'r', name: 'fix-typo' } as never,
+      settings, '/state', targetWorkspace(trigger, settings))
+    expect(execution.directory).toBe('/work/xsa')
+  })
+  it('reads the target from the ticket origin trigger when the Executor prepares it', () => {
+    const settings = h.runtime.store.settings()
+    h.runtime.store.saveSettings({ ...settings, executor: { ...settings.executor, targets: {
+      items: [{ id: 'xsa', kind: 'directory', name: 'XSA', root: '/work/xsa' }], selected: 'xsa' } } })
+    const trigger = { id: 'tr1', source: 'workbench', threads: [{ source: 'workbench', id: 'xsa' }],
+      actor: { source: 'workbench', id: 'alice' }, human: true, addressed: 'direct', at: new Date().toISOString(),
+      text: 'Fix it', meta: { target: 'xsa' } } as Trigger
+    h.runtime.store.triggers.save(trigger)
+    const ticket = { id: 'ticket-0123456789abcdef', origin: { triggerId: 'tr1', triggerIds: [] },
+      mandate: { strength: 'explicit', policyVersion: 'v1', basis: {}, actor: trigger.actor, scope: '' } } as unknown as Ticket
+    const prepared = h.runtime.executor.prepare(ticket,
+      { kind: 'accept', title: 'Fix', scope: 'the typo', reason: 'r', name: 'fix-typo' } as never)
+    expect(prepared.execution?.directory).toBe('/work/xsa')
   })
   it('renders each kind of Input as its worker reads it, inline, and no reopen Input', () => {
     const asked = { id: 'tr1', source: 'feishu', threads: [{ source: 'feishu', id: 'oc:om_1' }], actor: { source: 'feishu', id: 'ou_a' }, human: true,

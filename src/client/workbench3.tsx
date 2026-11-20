@@ -430,7 +430,7 @@ function WorkspaceDrawer({ open, onToggle }: { open: boolean; onToggle: () => vo
       <span className="cfg-icon">▣</span><span className="drawer-title">工作区</span><span className="drawer-chevron">▾</span>
     </button>
     <div className="cfg-body">
-      <div className="meta" style={{ fontSize: 11, color: 'var(--ink-3)' }}>本地文件夹：工作台要求可作用于这些目录，直接改里面的文件。</div>
+      <div className="meta" style={{ fontSize: 11, color: 'var(--ink-3)' }}>本地文件夹：工作台要求会直接在这个目录里执行，不再另建工单子目录。</div>
       {dirs.length === 0 && <div className="meta" style={{ fontSize: 11, color: 'var(--ink-3)' }}>还没有本地文件夹目标。</div>}
       {dirs.map(item => <label key={item.id} style={{ gap: 6 }}>
         <span className="dt-mono" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.root}</span>

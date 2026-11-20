@@ -113,6 +113,7 @@ jobs:
       - name: Compose the bundle in a throwaway DSH profile
         run: |
           npm install -g @deepseek-ai/dsh@0.2.2-rc.2
+          mkdir -p "$RUNNER_TEMP/dsh-home"
           export DSH_HOME="$RUNNER_TEMP/dsh-home"
           # Create a profile from the shipped Web template, then install the
           # packed artifact exactly as an operator would.

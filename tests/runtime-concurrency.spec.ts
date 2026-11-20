@@ -916,6 +916,14 @@ describe('the Executor\'s parts', () => {
       settings, '/state', targetWorkspace(trigger, settings))
     expect(execution.directory).toBe('/work/xsa')
   })
+  it('uses a configured execution workspace itself for every ticket', () => {
+    const settings = SettingsSchema.parse({ executor: { directory: 'D:\\dsh-plugins\\Xenra-SuperAgent' } })
+    const ticket = { id: 'ticket-0123456789abcdef', origin: { triggerId: 'tr1', triggerIds: [] },
+      mandate: { strength: 'explicit', policyVersion: 'v1', basis: {}, actor: { source: 'workbench', id: 'alice' }, scope: '' } } as unknown as Ticket
+    const execution = ticketExecution(ticket, { kind: 'accept', title: 'Fix', scope: 'the typo', reason: 'r', name: 'fix-typo' } as never,
+      settings, '/state')
+    expect(execution.directory).toBe('D:\\dsh-plugins\\Xenra-SuperAgent')
+  })
   it('reads the target from the ticket origin trigger when the Executor prepares it', () => {
     const settings = h.runtime.store.settings()
     h.runtime.store.saveSettings({ ...settings, executor: { ...settings.executor, targets: {

@@ -50,7 +50,9 @@ When an Assignment ends, its shell jobs are killed without waking the Session, a
 
 ### Preparing a Ticket directory
 
-When the Ticket comes from a local folder target, the execution directory is that folder itself: it already exists, the prepare command does not run, and the Executor does not create a Ticket subdirectory under it. Tickets that name the same folder share that workspace; separate directories are no longer an isolation boundary.
+When an execution workspace is configured (`executor.directory`), every Ticket's execution directory is that workspace itself: a new Ticket works in it directly, without a short-name subdirectory, and since it already exists the prepare command does not run. Empty gives each Ticket its own `<stateDir>/work/<short name>` directory. In a shared workspace, concurrent Tickets share one checkout, so git branches and uncommitted changes affect each other; leave it empty when you need isolation.
+
+When the Ticket comes from a local folder target, the execution directory is that folder itself: it already exists, the prepare command does not run, and the Executor does not create a Ticket subdirectory under it. A target directory takes precedence over the execution workspace. Tickets that name the same folder or workspace share it; separate directories are no longer an isolation boundary.
 
 Before the first Assignment, if the Ticket directory does not exist, the prepare command runs once with `sh -c` in its parent directory (the execution root by default), with the Ticket's execution variables. It has ten minutes. A failed command removes an empty directory it left, fails the Ticket and records its output; the failure is not retried automatically, because an existing directory counts as prepared and a retry would take the failed command's leftovers as the workspace. A person's message, a retry or a status request tries preparation again.
 

@@ -80,7 +80,7 @@ The concepts above and their rules are reusable: `src/core` depends only on a fe
 | --- | --- |
 | Source | GitHub: notifications to the agent account, discussion on subscribed Issues and pull requests, CI changes, pull requests merged or closed, and, where switched on, every new Issue, pull request and comment in the repository and the default branch's CI. Feishu: live events, history recovery, polling of subscribed topics, image reading |
 | Policy | Assessment rules, and each Source's allowed list, its sync, its bot list and its admission table |
-| Executor | A DSH Session named `worker-<ticket id>` and an execution directory per Ticket, in an execution environment whose variables the Executor and the Sources register |
+| Executor | A DSH Session named `worker-<ticket id>`, working in the configured shared workspace (or its own directory when unset), in an execution environment whose variables the Executor and the Sources register |
 | Channel | Feishu topic replies, GitHub comments and review thread replies |
 | Assessor | The main Session: a candidate arrives as a card, reads thread context and the repository within limits, then judges |
 
@@ -109,7 +109,7 @@ A reference list of the terms this and the later documents use, with their Chine
 | Assignment | 派工 | The binding of a Ticket to one Executor instance |
 | Subscription | 订阅 | The relation between a Ticket and a Thread |
 | Fan-out | 扇出 | Delivering Triggers of a subscribed Thread to a Ticket as context |
-| Executor | 执行器 | The port that runs Assignments: one Executor Session and one directory per Ticket |
+| Executor | 执行器 | The port that runs Assignments: one Executor Session per Ticket, in the configured shared workspace or its own directory |
 | Execution environment | 执行环境 | Where Executor Sessions and the prepare command run: variables that the Executor and the Sources register, each with a key, a value and a description |
 | Report | 报告 | The state an Assignment reports to its Ticket |
 | Attention | 待人工决定 | A question on a Ticket that waits for a person's answer |

@@ -8,7 +8,7 @@ import type { SourceRegistry } from '../sources/registry.ts'
 
 /** Variables registered by the Executor; `ticket` entries are populated only when a ticket is present. */
 export const EXECUTOR_VARIABLES: readonly (VariableSpec & { ticket?: true })[] = [
-  { key: 'XENRA_SUPERAGENT_DIR', ticket: true, description: { zh: '这个工单的执行目录；目标是本地文件夹时就是该文件夹本身', en: 'This ticket\'s directory; when the target is a local folder, that folder itself' } },
+  { key: 'XENRA_SUPERAGENT_DIR', ticket: true, description: { zh: '这个工单的执行目录；配置了执行工作区或目标是本地文件夹时，就是该目录本身', en: 'This ticket\'s directory; the configured shared workspace or local folder target itself when one is set' } },
   { key: 'XENRA_SUPERAGENT_NAME', ticket: true, description: { zh: '工单的短名，用作分支名；不再等同于执行目录名', en: 'The ticket\'s short name, used in branch names; not necessarily its directory name' } },
   { key: 'XENRA_SUPERAGENT_TICKET', ticket: true, description: { zh: '工单 id', en: 'The ticket id' } },
   { key: 'XENRA_SUPERAGENT_BLOCKED_COMMANDS', description: { zh: '这个执行环境禁止调用的命令，以空格分隔；不要运行它们', en: 'Commands blocked in this execution environment, separated by spaces; never run them' } },

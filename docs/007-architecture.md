@@ -13,7 +13,7 @@
 | 核心 | `src/core/` | 领域类型、端口、Engine 及其五个部件，对来源、策略、研判和执行一无所知 | 除 Node 的 `node:crypto` 外只有自己 |
 | 策略 | `src/policy.ts`、`src/admission.ts`、`src/limits.ts` | 设置 schema、策略版本、准入门、准入表 | 核心、`node:` 与 `zod` |
 | 应用 | `src/app/` | 组合根、Store、副作用队列、Sessions、执行器宿主、HTTP 路由、视图、工具 | 核心、策略、执行器、来源、基础设施 |
-| 执行器 | `src/executor/` | 每个工单一个 Session 和一个目录；宿主事件；后台作业与子智能体 | 核心、应用的一部分、基础设施 |
+| 执行器 | `src/executor/` | 每个工单一个 Session，执行目录可共用；宿主事件；后台作业与子智能体 | 核心、应用的一部分、基础设施 |
 | 来源 | `src/sources/` | 每种来源一个种类：配置、策略部分、渠道、线程上下文、轮询循环 | 核心、基础设施、`src/deployment.ts`；**不** import `src/app/` |
 | 基础设施 | `src/infra/` | CLI 传输、进程环境与包装脚本、健康面板、打包路径、文本度量 | 无内部依赖 |
 | 面板 | `src/client/` | 在浏览器里运行的面板；只 import 宿主侧的**类型**和几个纯值模块 | `src/core/errors.ts` 与 `src/core/reasons.ts` 的纯值、`src/setup.ts`、`src/limits.ts`、`src/admission.ts`、`src/navigation.ts`、`src/sources/host.ts`、`src/app/api.ts` 的过滤列表与类型 |

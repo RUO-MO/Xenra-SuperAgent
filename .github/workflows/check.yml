@@ -1,7 +1,8 @@
 # The gate between `dev` and `main`: typecheck and tests run on clean Linux and
-# Windows machines. After they pass, the built `lib/` is rebuilt and committed
-# back to the triggering branch, so a git install always pulls fresh artifacts
-# and no developer has to remember to build before pushing.
+# Windows machines. The built `lib/` is committed, so a git install always pulls
+# fresh artifacts. A push to `dev` may be rebuilt in place; `main` is protected, so
+# CI verifies that `lib/` is current instead of trying to push a commit past its
+# required status checks.
 name: CI
 
 on:
@@ -42,23 +43,36 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
-      # Rebuild lib/ from the sources and commit it back so git installs always
-      # carry the artifacts matching this commit. Skipped on PRs from forks,
-      # where the token is read-only and the branch is not writable.
-      - name: Commit rebuilt lib/ (push to dev/main)
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+      # Rebuild lib/ from the sources and commit it back on `dev`, which is not
+      # protected. On `main` this is impossible: the branch requires the two
+      # checks below before any push is accepted, so the job would fail after
+      # doing all the work. There it verifies the committed artifacts instead.
+      - name: Commit rebuilt lib/ (push to dev)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- lib/; then
+          if [ -z "$(git status --porcelain -- lib/)" ]; then
             echo "lib/ is already current; nothing to commit."
             exit 0
           fi
-          git add lib/
+          git add -A -- lib/
           git commit -m "chore: rebuild lib/ from sources [skip ci]"
           # Rebase over any push that landed while CI ran, keeping only our lib/ commit on top.
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin HEAD:${GITHUB_REF_NAME}
+      # `git status --porcelain` rather than `git diff`: tsdown cleans lib/ and
+      # may add a chunk under a new content hash, which `git diff` alone ignores.
+      - name: Verify lib/ matches sources
+        if: github.event_name != 'push' || github.ref != 'refs/heads/dev'
+        run: |
+          if [ -z "$(git status --porcelain -- lib/)" ]; then
+            echo "lib/ is current."
+            exit 0
+          fi
+          echo "::error::lib/ is stale. Run 'pnpm build' and commit the rebuilt lib/."
+          git status --short -- lib/
+          exit 1
 
   windows:
     name: typecheck, test, build (Windows)

@@ -64,7 +64,7 @@ pnpm install
 pnpm check
 ```
 
-`pnpm check` 依次运行类型检查、测试和构建。仓库里同时提交了构建产物 `lib/`，所以以 `link:` 方式安装时无需先构建即可直接使用；改过 `src/` 后请重新 `pnpm build`，让产物与源码一致。
+`pnpm check` 依次运行类型检查、测试和构建。仓库里同时提交了构建产物 `lib/`，所以以 `link:` 方式安装时无需先构建即可直接使用；改过 `src/` 后请重新 `pnpm build`，让产物与源码一致。`main` 受分支保护，CI 不会向它回写产物；它只校验 `lib/` 是否与源码一致，过期会直接报错，提交 PR 前先跑 `pnpm check`。
 
 插件本身在 Linux、macOS 与 Windows 上都可用：包装脚本、prepare 命令、路径查找与 git helper 都按平台各自的形式生成。启停脚本 `scripts/xenra-superagent` 需要 tmux 与 `ps`，因此只在 POSIX 主机上运行；在 Windows 上直接用 `dsh --profile <名字>` 启动。测试中少数用例需要 `#!/bin/sh`、`tmux` 或 `ps`，在 Windows 上以 `it.skipIf` 跳过，其余用例照常运行。
 

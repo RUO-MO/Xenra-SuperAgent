@@ -64,7 +64,7 @@ pnpm install
 pnpm check
 ```
 
-`pnpm check` runs the typecheck, the tests and the build in that order. The build output in `lib/` is committed, so the repository installs as-is through a `link:` install without a build step first; after changing `src/`, run `pnpm build` again so the output matches the sources.
+`pnpm check` runs the typecheck, the tests and the build in that order. The build output in `lib/` is committed, so the repository installs as-is through a `link:` install without a build step first; after changing `src/`, run `pnpm build` again so the output matches the sources. `main` is branch-protected, so CI does not write artifacts back to it; it only verifies that `lib/` matches the sources and fails when it is stale. Run `pnpm check` before opening a pull request.
 
 The plugin itself runs on Linux, macOS and Windows: the shims, the prepare command, executable lookup and the git helper each take the form their platform expects. The start/stop script `scripts/xenra-superagent` needs tmux and `ps`, so it runs on POSIX hosts only; on Windows, start `dsh --profile <name>` directly. A few test cases need `#!/bin/sh`, `tmux` or `ps`, and are skipped on Windows with `it.skipIf`; the rest run as usual.
 
